@@ -110,7 +110,10 @@ export class InputValidator {
     }
 
     // Required check
-    if (options.required && (value === undefined || value === null || (typeof value === 'number' && isNaN(value)))) {
+    if (
+      options.required &&
+      (value === undefined || value === null || (typeof value === 'number' && isNaN(value)))
+    ) {
       errors.push(`${fieldName} is required`);
       return { valid: false, errors };
     }
@@ -473,7 +476,8 @@ export class InputValidator {
     const queryResult = this.validateSearchQuery(obj.query);
     this.throwIfInvalid(queryResult);
 
-    const searchTypeResult = this.validateSearchType(obj.searchType);
+    const rawSearchType = obj.searchType ?? obj.search_type;
+    const searchTypeResult = this.validateSearchType(rawSearchType);
     this.throwIfInvalid(searchTypeResult);
 
     const limitResult = this.validateLimit(obj.limit);

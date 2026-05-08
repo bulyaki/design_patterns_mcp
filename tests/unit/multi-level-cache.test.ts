@@ -8,6 +8,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { MultiLevelCache, createMultiLevelCache } from '../../src/services/multi-level-cache.js';
 import { TelemetryService } from '../../src/services/telemetry-service.js';
 import { MultiLevelCacheConfig } from '../../src/types/cache-types.js';
+import type { Pattern } from '../../src/models/pattern.js';
+import type { SearchResult } from '../../src/repositories/interfaces.js';
 
 describe('MultiLevelCache', () => {
   let cache: MultiLevelCache;
@@ -18,7 +20,12 @@ describe('MultiLevelCache', () => {
       l1: { maxSize: 100, defaultTTL: 3600000, enableMetrics: true },
       l2: { enabled: false, defaultTTL: 86400000 },
       l3: { enabled: false, defaultTTL: 604800000 },
-      global: { defaultTTL: 3600000, writeStrategy: 'write-through', telemetryEnabled: true, compressionEnabled: false },
+      global: {
+        defaultTTL: 3600000,
+        writeStrategy: 'write-through',
+        telemetryEnabled: true,
+        compressionEnabled: false,
+      },
     });
   });
 
@@ -70,9 +77,12 @@ describe('MultiLevelCache', () => {
 
     it('should use type guard for type-safe retrieval', async () => {
       await cache.set('typed', { name: 'test', value: 123 });
-      const result = await cache.get<{ name: string; value: number }>('typed', (v): v is { name: string; value: number } => {
-        return typeof v === 'object' && v !== null && 'name' in v && 'value' in v;
-      });
+      const result = await cache.get<{ name: string; value: number }>(
+        'typed',
+        (v): v is { name: string; value: number } => {
+          return typeof v === 'object' && v !== null && 'name' in v && 'value' in v;
+        }
+      );
       expect(result).toEqual({ name: 'test', value: 123 });
     });
   });
@@ -154,7 +164,12 @@ describe('MultiLevelCache', () => {
         l1: { maxSize: 2, defaultTTL: 3600000, enableMetrics: true },
         l2: { enabled: false, defaultTTL: 86400000 },
         l3: { enabled: false, defaultTTL: 604800000 },
-        global: { defaultTTL: 3600000, writeStrategy: 'write-through', telemetryEnabled: false, compressionEnabled: false },
+        global: {
+          defaultTTL: 3600000,
+          writeStrategy: 'write-through',
+          telemetryEnabled: false,
+          compressionEnabled: false,
+        },
       });
 
       await smallCache.set('key1', 'value1');
@@ -187,32 +202,25 @@ describe('MultiLevelCache', () => {
   describe('Convenience Methods', () => {
     describe('Pattern Caching', () => {
       it('should cache pattern objects', async () => {
-        const pattern = {
+        const pattern: Pattern = {
           id: 'test-pattern',
           name: 'Test Pattern',
-          category: 'Creational' as const,
+          category: 'Creational',
           description: 'A test pattern',
           problem: 'Test problem',
           solution: 'Test solution',
-          tags: ['test'],
-          codeExamples: [],
-          relatedPatterns: [],
-          contexts: [],
-          consequences: [],
-          implementation: '',
-          notes: '',
-          source: '',
-          confidence: 0.9,
-          author: '',
-          createdAt: '',
-          updatedAt: '',
           when_to_use: [],
           benefits: [],
           drawbacks: [],
           use_cases: [],
+          implementations: [],
+          complexity: 'Low',
+          tags: ['test'],
+          createdAt: new Date(),
+          updatedAt: new Date(),
         };
 
-        await cache.setPattern('test-pattern', pattern as any);
+        await cache.setPattern('test-pattern', pattern);
         const retrieved = await cache.getPattern('test-pattern');
 
         expect(retrieved).toBeDefined();
@@ -225,12 +233,50 @@ describe('MultiLevelCache', () => {
 
     describe('Search Results Caching', () => {
       it('should cache search results', async () => {
-        const results = [
-          { pattern: { id: 'p1', name: 'Pattern 1', category: 'Creational' as const, description: '', problem: '', solution: '', tags: [], codeExamples: [], relatedPatterns: [], contexts: [], consequences: [], implementation: '', notes: '', source: '', confidence: 0.9, author: '', createdAt: '', updatedAt: '', when_to_use: [], benefits: [], drawbacks: [], use_cases: [] }, score: 0.9 },
-          { pattern: { id: 'p2', name: 'Pattern 2', category: 'Structural' as const, description: '', problem: '', solution: '', tags: [], codeExamples: [], relatedPatterns: [], contexts: [], consequences: [], implementation: '', notes: '', source: '', confidence: 0.8, author: '', createdAt: '', updatedAt: '', when_to_use: [], benefits: [], drawbacks: [], use_cases: [] }, score: 0.8 },
+        const results: SearchResult[] = [
+          {
+            pattern: {
+              id: 'p1',
+              name: 'Pattern 1',
+              category: 'Creational',
+              description: '',
+              problem: '',
+              solution: '',
+              when_to_use: [],
+              benefits: [],
+              drawbacks: [],
+              use_cases: [],
+              implementations: [],
+              complexity: 'Low',
+              tags: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+            score: 0.9,
+          },
+          {
+            pattern: {
+              id: 'p2',
+              name: 'Pattern 2',
+              category: 'Structural',
+              description: '',
+              problem: '',
+              solution: '',
+              when_to_use: [],
+              benefits: [],
+              drawbacks: [],
+              use_cases: [],
+              implementations: [],
+              complexity: 'Low',
+              tags: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+            score: 0.8,
+          },
         ];
 
-        await cache.setSearchResults('test query', { category: 'all' }, results as any);
+        await cache.setSearchResults('test query', { category: 'all' }, results);
         const retrieved = await cache.getSearchResults('test query', { category: 'all' });
 
         expect(retrieved).toBeDefined();
@@ -256,7 +302,12 @@ describe('MultiLevelCache', () => {
         l1: { maxSize: 100, defaultTTL: 3600000, enableMetrics: true },
         l2: { enabled: false, defaultTTL: 86400000 },
         l3: { enabled: false, defaultTTL: 604800000 },
-        global: { defaultTTL: 3600000, writeStrategy: 'write-through', telemetryEnabled: true, compressionEnabled: false },
+        global: {
+          defaultTTL: 3600000,
+          writeStrategy: 'write-through',
+          telemetryEnabled: true,
+          compressionEnabled: false,
+        },
       });
 
       await recordingCache.set('key', 'value');
@@ -272,9 +323,7 @@ describe('MultiLevelCache', () => {
 
   describe('Concurrency Safety', () => {
     it('should handle concurrent set operations', async () => {
-      const operations = Array.from({ length: 10 }, (_, i) =>
-        cache.set(`key${i}`, `value${i}`)
-      );
+      const operations = Array.from({ length: 10 }, (_, i) => cache.set(`key${i}`, `value${i}`));
 
       await Promise.all(operations);
 
@@ -287,9 +336,7 @@ describe('MultiLevelCache', () => {
     it('should handle concurrent get operations', async () => {
       await cache.set('shared', 'value');
 
-      const operations = Array.from({ length: 10 }, () =>
-        cache.get('shared')
-      );
+      const operations = Array.from({ length: 10 }, () => cache.get('shared'));
 
       const results = await Promise.all(operations);
       results.forEach(result => {
@@ -300,7 +347,7 @@ describe('MultiLevelCache', () => {
 
   describe('Edge Cases', () => {
     it('should handle null values', async () => {
-      await cache.set('null', null as any);
+      await cache.set<null>('null', null);
       const result = await cache.get('null');
       expect(result).toBeNull();
     });

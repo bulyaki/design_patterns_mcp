@@ -19,7 +19,7 @@ interface CLIOptions {
 async function main(): Promise<void> {
   const options: CLIOptions = parseArguments();
 
-  const dbPath = process.env.DATABASE_PATH || './data/design-patterns.db';
+  const dbPath = process.env.DATABASE_PATH ?? './data/design-patterns.db';
   const db = new DatabaseManager({ filename: dbPath });
 
   try {
@@ -30,7 +30,6 @@ async function main(): Promise<void> {
     }
 
     await runIntegrityCheck(db, options);
-
   } catch (error) {
     console.error('Integrity check failed:', error instanceof Error ? error.message : error);
     process.exit(1);
@@ -45,11 +44,11 @@ function parseArguments(): CLIOptions {
     fix: args.includes('--fix'),
     verbose: args.includes('--verbose') || args.includes('-v'),
     schemaCheck: args.includes('--schema') || args.includes('-s'),
-    jsonOutput: args.includes('--json')
+    jsonOutput: args.includes('--json'),
   };
 }
 
-async function runSchemaValidation(verbose: boolean): Promise<void> {
+function runSchemaValidation(verbose: boolean): Promise<void> {
   console.log('Running schema validation...');
   console.log('');
 
@@ -72,7 +71,12 @@ async function runSchemaValidation(verbose: boolean): Promise<void> {
 
     totalErrors += result.errors.length;
     totalWarnings += result.warnings.length;
-    results.push({ file, valid: result.valid, errors: result.errors.length, warnings: result.warnings.length });
+    results.push({
+      file,
+      valid: result.valid,
+      errors: result.errors.length,
+      warnings: result.warnings.length,
+    });
   }
 
   console.log('═'.repeat(50));
@@ -91,6 +95,8 @@ async function runSchemaValidation(verbose: boolean): Promise<void> {
   } else if (verbose) {
     console.log('Schema validation passed');
   }
+
+  return Promise.resolve();
 }
 
 async function runIntegrityCheck(db: DatabaseManager, options: CLIOptions): Promise<void> {

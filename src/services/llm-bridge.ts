@@ -124,33 +124,36 @@ function isPatternAnalysisResponse(data: unknown): data is PatternAnalysisRespon
   const { detectedPatterns, recommendations, alternatives } = data;
 
   return (
-    isTypedArray(detectedPatterns, (p): p is PatternAnalysisResponse['detectedPatterns'][0] =>
-      isObject(p) &&
-      isString(p.name) &&
-      isNumber(p.confidence) &&
-      isString(p.reasoning) &&
-      isString(p.category)
+    isTypedArray(
+      detectedPatterns,
+      (p): p is PatternAnalysisResponse['detectedPatterns'][0] =>
+        isObject(p) &&
+        isString(p.name) &&
+        isNumber(p.confidence) &&
+        isString(p.reasoning) &&
+        isString(p.category)
     ) &&
-    isTypedArray(recommendations, (r): r is PatternAnalysisResponse['recommendations'][0] =>
-      isObject(r) &&
-      isString(r.pattern) &&
-      isString(r.rationale) &&
-      isString(r.implementation) &&
-      isTypedArray(r.benefits, isString)
+    isTypedArray(
+      recommendations,
+      (r): r is PatternAnalysisResponse['recommendations'][0] =>
+        isObject(r) &&
+        isString(r.pattern) &&
+        isString(r.rationale) &&
+        isString(r.implementation) &&
+        isTypedArray(r.benefits, isString)
     ) &&
-    isTypedArray(alternatives, (a): a is PatternAnalysisResponse['alternatives'][0] =>
-      isObject(a) &&
-      isString(a.pattern) &&
-      isString(a.comparison) &&
-      isString(a.when_to_use)
+    isTypedArray(
+      alternatives,
+      (a): a is PatternAnalysisResponse['alternatives'][0] =>
+        isObject(a) && isString(a.pattern) && isString(a.comparison) && isString(a.when_to_use)
     )
   );
 }
 
 function isLLMEnhancementArray(data: unknown): data is LLMEnhancement[] {
-  return isTypedArray(data, (item): item is LLMEnhancement =>
-    isObject(item) &&
-    isString(item.patternName)
+  return isTypedArray(
+    data,
+    (item): item is LLMEnhancement => isObject(item) && isString(item.patternName)
   );
 }
 
@@ -171,10 +174,12 @@ export class LLMBridgeService {
       const prompt = this.buildAnalysisPrompt(request);
       const llmRequest: LLMRequest = {
         prompt,
-        context: request.context ? {
-          existingPatterns: request.context.existingPatterns,
-          requirements: request.context.constraints,
-        } : undefined,
+        context: request.context
+          ? {
+              existingPatterns: request.context.existingPatterns,
+              requirements: request.context.constraints,
+            }
+          : undefined,
         format: 'json',
       };
 
@@ -252,7 +257,10 @@ export class LLMBridgeService {
   /**
    * Enhance pattern recommendations with LLM insights
    */
-  async enhanceRecommendations(baseRecommendations: PatternRecommendation[], userContext: UserContext): Promise<PatternRecommendation[]> {
+  async enhanceRecommendations(
+    baseRecommendations: PatternRecommendation[],
+    userContext: UserContext
+  ): Promise<PatternRecommendation[]> {
     try {
       const prompt = this.buildEnhancementPrompt(baseRecommendations, userContext);
       const response = await Promise.resolve(this.callLLM({ prompt, format: 'json' }));
@@ -325,7 +333,11 @@ Focus on practical, implementable recommendations with clear reasoning.`;
   /**
    * Build implementation guidance prompt
    */
-  protected buildImplementationPrompt(pattern: Partial<Pattern>, language: string, context?: UserContext): string {
+  protected buildImplementationPrompt(
+    pattern: Partial<Pattern>,
+    language: string,
+    context?: UserContext
+  ): string {
     return `
 You are an expert software engineer providing detailed implementation guidance for the ${pattern.name} design pattern.
 
@@ -352,7 +364,11 @@ Format your response in clear, actionable markdown with code examples where appr
   /**
    * Build relationship explanation prompt
    */
-  protected buildRelationshipPrompt(pattern1: Partial<Pattern>, pattern2: Partial<Pattern>, context?: string): string {
+  protected buildRelationshipPrompt(
+    pattern1: Partial<Pattern>,
+    pattern2: Partial<Pattern>,
+    context?: string
+  ): string {
     return `
 You are an expert software architect explaining the relationship between two design patterns.
 
@@ -378,7 +394,11 @@ Provide practical examples and clear guidance for developers.`;
   /**
    * Build code example prompt
    */
-  protected buildCodeExamplePrompt(pattern: Partial<Pattern>, language: string, scenario: string): string {
+  protected buildCodeExamplePrompt(
+    pattern: Partial<Pattern>,
+    language: string,
+    scenario: string
+  ): string {
     return `
 You are an expert software engineer creating a practical code example for the ${pattern.name} design pattern.
 
@@ -401,7 +421,10 @@ The example should be production-ready and demonstrate best practices for the ${
   /**
    * Build enhancement prompt
    */
-  protected buildEnhancementPrompt(recommendations: PatternRecommendation[], userContext: UserContext): string {
+  protected buildEnhancementPrompt(
+    recommendations: PatternRecommendation[],
+    userContext: UserContext
+  ): string {
     return `
 You are an AI assistant enhancing design pattern recommendations with additional insights.
 
@@ -581,7 +604,9 @@ Respond with enhanced recommendations in the same JSON format, maintaining all e
    * Get pattern information from database
    */
   protected getPatternInfo(patternName: string): Partial<Pattern> {
-    const pattern = this.db.queryOne<PatternRow>('SELECT * FROM patterns WHERE name = ?', [patternName]);
+    const pattern = this.db.queryOne<PatternRow>('SELECT * FROM patterns WHERE name = ?', [
+      patternName,
+    ]);
 
     if (!pattern) {
       return {
@@ -595,11 +620,11 @@ Respond with enhanced recommendations in the same JSON format, maintaining all e
       name: pattern.name,
       category: pattern.category,
       description: pattern.description,
-      when_to_use: parseArrayProperty(pattern.when_to_use || '', 'when_to_use'),
-      benefits: parseArrayProperty(pattern.benefits || '', 'benefits'),
-      drawbacks: parseArrayProperty(pattern.drawbacks || '', 'drawbacks'),
-      use_cases: parseArrayProperty(pattern.use_cases || '', 'use_cases'),
-      tags: parseTags(pattern.tags || ''),
+      when_to_use: parseArrayProperty(pattern.when_to_use ?? '', 'when_to_use'),
+      benefits: parseArrayProperty(pattern.benefits ?? '', 'benefits'),
+      drawbacks: parseArrayProperty(pattern.drawbacks ?? '', 'drawbacks'),
+      use_cases: parseArrayProperty(pattern.use_cases ?? '', 'use_cases'),
+      tags: parseTags(pattern.tags ?? ''),
     };
   }
 
@@ -699,7 +724,10 @@ class ${patternName}Example {
   /**
    * Merge LLM enhancements with base recommendations
    */
-  protected mergeEnhancements(baseRecommendations: PatternRecommendation[], enhancements: LLMEnhancement[]): PatternRecommendation[] {
+  protected mergeEnhancements(
+    baseRecommendations: PatternRecommendation[],
+    enhancements: LLMEnhancement[]
+  ): PatternRecommendation[] {
     // Simple merge - in production, implement more sophisticated merging
     return baseRecommendations.map((rec, index) => {
       const enhancement = enhancements[index];
@@ -728,10 +756,12 @@ class ${patternName}Example {
   }> {
     try {
       // Test LLM with a simple request
-      await Promise.resolve(this.callLLM({
-        prompt: 'Hello, this is a test.',
-        format: 'text',
-      }));
+      await Promise.resolve(
+        this.callLLM({
+          prompt: 'Hello, this is a test.',
+          format: 'text',
+        })
+      );
 
       return {
         healthy: true,
@@ -750,7 +780,3 @@ class ${patternName}Example {
     }
   }
 }
-
-
-
-

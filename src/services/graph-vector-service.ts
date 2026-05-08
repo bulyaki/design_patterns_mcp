@@ -14,11 +14,11 @@ import type { GraphNode, GraphResult, MultiHopResult } from '../types/search-str
  * Graph construction configuration
  */
 export interface GraphConstructionConfig {
-  k: number;                    // k for kNN graph
-  maxHops: number;              // Maximum traversal depth
-  edgeWeightThreshold: number;  // Minimum edge weight to include
-  useMetadataEdges: boolean;    // Include category/tag edges
-  rebuildInterval: number;      // Rebuild interval in ms
+  k: number; // k for kNN graph
+  maxHops: number; // Maximum traversal depth
+  edgeWeightThreshold: number; // Minimum edge weight to include
+  useMetadataEdges: boolean; // Include category/tag edges
+  rebuildInterval: number; // Rebuild interval in ms
 }
 
 /**
@@ -27,7 +27,7 @@ export interface GraphConstructionConfig {
 export interface TraversalConfig {
   startNode: string;
   maxHops: number;
-  beamWidth: number;            // Number of paths to keep
+  beamWidth: number; // Number of paths to keep
   similarityThreshold: number;
   includeReverseEdges: boolean;
 }
@@ -69,19 +69,19 @@ export class GraphVectorService {
       useMetadataEdges: config?.useMetadataEdges ?? true,
       rebuildInterval: config?.rebuildInterval ?? 3600000, // 1 hour
     };
-    this.telemetryService = telemetryService || null;
+    this.telemetryService = telemetryService ?? null;
   }
 
   /**
    * Build kNN graph from embeddings
    */
-   async buildKNNGraph(): Promise<Map<string, GraphNode>> {
+  buildKNNGraph(): Promise<Map<string, GraphNode>> {
     const now = Date.now();
-    
+
     // Check if cache is still valid
-    if (this.graphCache.size > 0 && (now - this.lastBuildTime) < this.config.rebuildInterval) {
+    if (this.graphCache.size > 0 && now - this.lastBuildTime < this.config.rebuildInterval) {
       logger.debug('graph-vector-service', 'Using cached graph');
-      return this.graphCache;
+      return Promise.resolve(this.graphCache);
     }
 
     logger.info('graph-vector-service', 'Building kNN graph', {
@@ -111,13 +111,20 @@ export class GraphVectorService {
 
     if (embeddings.length === 0) {
       logger.warn('graph-vector-service', 'No embeddings found for graph construction');
-      return graph;
+      return Promise.resolve(graph);
     }
 
     // For each pattern, find k nearest neighbors
     for (const { pattern_id, embedding } of embeddings) {
-      const embeddingVector = JSON.parse(embedding) as number[];
-      
+      const parsedEmbedding: unknown = JSON.parse(embedding);
+      if (
+        !Array.isArray(parsedEmbedding) ||
+        !parsedEmbedding.every(value => typeof value === 'number')
+      ) {
+        continue;
+      }
+      const embeddingVector = parsedEmbedding;
+
       // Find neighbors using vector operations
       const neighbors = this.vectorOps.searchSimilar(
         embeddingVector,
@@ -132,7 +139,7 @@ export class GraphVectorService {
           .filter(n => n.score >= this.config.edgeWeightThreshold)
           .map(n => ({
             id: n.patternId,
-            distance: n.distance ?? (1 - n.score),
+            distance: n.distance ?? 1 - n.score,
             weight: n.score,
           })),
         metadata: this.getPatternMetadata(pattern_id),
@@ -149,29 +156,31 @@ export class GraphVectorService {
     this.graphCache = graph;
     this.lastBuildTime = now;
 
-     const duration = Date.now() - startTime;
-     logger.info('graph-vector-service', 'Graph built successfully', {
-       nodes: graph.size,
-       avgNeighbors: Array.from(graph.values()).reduce((sum, n) => sum + n.neighbors.length, 0) / graph.size,
-       durationMs: duration,
-     });
+    const duration = Date.now() - startTime;
+    logger.info('graph-vector-service', 'Graph built successfully', {
+      nodes: graph.size,
+      avgNeighbors:
+        Array.from(graph.values()).reduce((sum, n) => sum + n.neighbors.length, 0) / graph.size,
+      durationMs: duration,
+    });
 
-     // Record graph build completion
-     if (this.telemetryService) {
-       this.telemetryService.recordEvent({
-         type: 'graph_traversal',
-         timestamp: new Date(),
-         context: {
-           action: 'graph_build_complete',
-           nodes: graph.size,
-           avgNeighbors: Array.from(graph.values()).reduce((sum, n) => sum + n.neighbors.length, 0) / graph.size,
-           durationMs: duration,
-           edgesAdded: Array.from(graph.values()).reduce((sum, n) => sum + n.neighbors.length, 0),
-         },
-       });
-     }
+    // Record graph build completion
+    if (this.telemetryService) {
+      this.telemetryService.recordEvent({
+        type: 'graph_traversal',
+        timestamp: new Date(),
+        context: {
+          action: 'graph_build_complete',
+          nodes: graph.size,
+          avgNeighbors:
+            Array.from(graph.values()).reduce((sum, n) => sum + n.neighbors.length, 0) / graph.size,
+          durationMs: duration,
+          edgesAdded: Array.from(graph.values()).reduce((sum, n) => sum + n.neighbors.length, 0),
+        },
+      });
+    }
 
-     return graph;
+    return Promise.resolve(graph);
   }
 
   /**
@@ -190,31 +199,41 @@ export class GraphVectorService {
       if (!categoryGroups.has(pattern.category)) {
         categoryGroups.set(pattern.category, []);
       }
-      categoryGroups.get(pattern.category)!.push(pattern.id);
+      const categoryPatterns = categoryGroups.get(pattern.category);
+      if (categoryPatterns) {
+        categoryPatterns.push(pattern.id);
+      }
 
-      const tags = pattern.tags ? JSON.parse(pattern.tags) : [];
+      const parsedTags: unknown = pattern.tags ? JSON.parse(pattern.tags) : [];
+      const tags = Array.isArray(parsedTags)
+        ? parsedTags.filter((tag): tag is string => typeof tag === 'string')
+        : [];
       for (const tag of tags) {
         if (!tagGroups.has(tag)) {
           tagGroups.set(tag, []);
         }
-        tagGroups.get(tag)!.push(pattern.id);
+        const tagPatterns = tagGroups.get(tag);
+        if (tagPatterns) {
+          tagPatterns.push(pattern.id);
+        }
       }
     }
 
     // Add category edges
-    for (const [category, patternIds] of categoryGroups.entries()) {
+    for (const [, patternIds] of categoryGroups.entries()) {
       const weight = 0.15; // Fixed weight for category edges
       for (let i = 0; i < patternIds.length; i++) {
         for (let j = i + 1; j < patternIds.length; j++) {
           const id1 = patternIds[i];
           const id2 = patternIds[j];
 
-          if (graph.has(id1)) {
-            const existing = graph.get(id1)!.neighbors.find(n => n.id === id2);
+          const sourceNode = graph.get(id1);
+          if (sourceNode) {
+            const existing = sourceNode.neighbors.find(n => n.id === id2);
             if (existing) {
               existing.weight += weight; // Boost existing edges
             } else {
-              graph.get(id1)!.neighbors.push({
+              sourceNode.neighbors.push({
                 id: id2,
                 distance: 1 - weight,
                 weight,
@@ -226,19 +245,20 @@ export class GraphVectorService {
     }
 
     // Add tag edges
-    for (const [tag, patternIds] of tagGroups.entries()) {
+    for (const [, patternIds] of tagGroups.entries()) {
       const weight = 0.1; // Fixed weight for tag edges
       for (let i = 0; i < patternIds.length; i++) {
         for (let j = i + 1; j < patternIds.length; j++) {
           const id1 = patternIds[i];
           const id2 = patternIds[j];
 
-          if (graph.has(id1)) {
-            const existing = graph.get(id1)!.neighbors.find(n => n.id === id2);
+          const sourceNode = graph.get(id1);
+          if (sourceNode) {
+            const existing = sourceNode.neighbors.find(n => n.id === id2);
             if (existing) {
               existing.weight += weight;
             } else {
-              graph.get(id1)!.neighbors.push({
+              sourceNode.neighbors.push({
                 id: id2,
                 distance: 1 - weight,
                 weight,
@@ -249,7 +269,10 @@ export class GraphVectorService {
       }
     }
 
-    logger.debug('graph-vector-service', `Added metadata edges for ${categoryGroups.size} categories and ${tagGroups.size} tags`);
+    logger.debug(
+      'graph-vector-service',
+      `Added metadata edges for ${categoryGroups.size} categories and ${tagGroups.size} tags`
+    );
   }
 
   /**
@@ -257,7 +280,7 @@ export class GraphVectorService {
    */
   async traverseGraph(config: TraversalConfig): Promise<GraphResult[]> {
     const graph = await this.buildKNNGraph();
-    
+
     if (!graph.has(config.startNode)) {
       return [];
     }
@@ -269,19 +292,25 @@ export class GraphVectorService {
       path: string[];
       weights: number[];
       hops: number;
-    }> = [{
-      nodeId: config.startNode,
-      path: [config.startNode],
-      weights: [],
-      hops: 0,
-    }];
+    }> = [
+      {
+        nodeId: config.startNode,
+        path: [config.startNode],
+        weights: [],
+        hops: 0,
+      },
+    ];
 
     while (queue.length > 0 && results.length < config.beamWidth) {
-      const current = queue.shift()!;
-      
+      const current = queue.shift();
+      if (!current) {
+        continue;
+      }
+
       if (current.hops >= config.maxHops) {
         // Reached max depth, add to results
-        const cumulativeScore = current.weights.reduce((sum, w) => sum + w, 0) / (current.weights.length || 1);
+        const cumulativeScore =
+          current.weights.reduce((sum, w) => sum + w, 0) / (current.weights.length || 1);
         results.push({
           patternId: current.nodeId,
           path: current.path,
@@ -330,10 +359,9 @@ export class GraphVectorService {
    */
   async multiHopReasoning(
     startPatternId: string,
-    queryEmbedding: number[],
+    _queryEmbedding: number[],
     maxHops: number = 2
   ): Promise<MultiHopResult[]> {
-    const graph = await this.buildKNNGraph();
     const results: MultiHopResult[] = [];
 
     // Get top 3 paths from traversal
@@ -355,7 +383,7 @@ export class GraphVectorService {
       for (let i = 1; i < path.path.length; i++) {
         const intermediate = path.path[i];
         const weight = path.edgeWeights[i - 1];
-        
+
         // Get pattern info for intermediate
         const patternInfo = this.db.queryOne<{ name: string; description: string }>(
           'SELECT name, description FROM patterns WHERE id = ?',
@@ -416,12 +444,16 @@ export class GraphVectorService {
     const visited = new Set<string>([patternId]);
 
     if (node) {
-      const queue: Array<{ nodeId: string; path: string[]; score: number }> = 
-        node.neighbors.map(n => ({ nodeId: n.id, path: [patternId, n.id], score: n.weight }));
+      const queue: Array<{ nodeId: string; path: string[]; score: number }> = node.neighbors.map(
+        n => ({ nodeId: n.id, path: [patternId, n.id], score: n.weight })
+      );
 
       while (queue.length > 0 && indirect.length < limit) {
-        const current = queue.shift()!;
-        
+        const current = queue.shift();
+        if (!current) {
+          continue;
+        }
+
         if (current.path.length - 1 >= hops) {
           // Add to indirect results if not already in direct
           if (!direct.some(d => d.id === current.nodeId)) {
@@ -463,7 +495,9 @@ export class GraphVectorService {
   /**
    * Get pattern metadata for graph nodes
    */
-  private getPatternMetadata(patternId: string): { category?: string; tags?: string[] } | undefined {
+  private getPatternMetadata(
+    patternId: string
+  ): { category?: string; tags?: string[] } | undefined {
     const pattern = this.db.queryOne<{ category: string; tags: string }>(
       'SELECT category, tags FROM patterns WHERE id = ?',
       [patternId]
@@ -471,9 +505,13 @@ export class GraphVectorService {
 
     if (!pattern) return undefined;
 
+    const parsedTags: unknown = pattern.tags ? JSON.parse(pattern.tags) : [];
+
     return {
       category: pattern.category,
-      tags: pattern.tags ? JSON.parse(pattern.tags) : [],
+      tags: Array.isArray(parsedTags)
+        ? parsedTags.filter((tag): tag is string => typeof tag === 'string')
+        : [],
     };
   }
 
@@ -518,7 +556,7 @@ export class GraphVectorService {
     connectedComponents: number;
   }> {
     const graph = await this.buildKNNGraph();
-    
+
     const nodeCount = graph.size;
     let edgeCount = 0;
     let totalDegree = 0;

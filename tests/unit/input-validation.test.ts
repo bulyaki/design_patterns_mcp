@@ -284,6 +284,20 @@ describe('InputValidator', () => {
           limit: 25,
         });
       });
+
+      it('should accept legacy search_type alias', () => {
+        const args = {
+          query: 'builder',
+          search_type: 'keyword',
+          limit: 5,
+        };
+        const result = InputValidator.validateSearchPatternsArgs(args);
+        expect(result).toEqual({
+          query: 'builder',
+          searchType: 'keyword',
+          limit: 5,
+        });
+      });
     });
 
     describe('validateGetPatternDetailsArgs', () => {

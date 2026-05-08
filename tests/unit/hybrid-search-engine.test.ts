@@ -15,17 +15,28 @@ describe('HybridSearchEngine', () => {
   let mockVectorOps: VectorOperationsService;
   let mockDb: DatabaseManager;
   let mockCache: CacheService;
+  let searchSimilarMock: ReturnType<typeof vi.fn>;
+  let findSimilarPatternsMock: ReturnType<typeof vi.fn>;
+  let dbExecuteMock: ReturnType<typeof vi.fn>;
+  let dbQueryMock: ReturnType<typeof vi.fn>;
+  let dbQueryOneMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    searchSimilarMock = vi.fn();
+    findSimilarPatternsMock = vi.fn();
+    dbExecuteMock = vi.fn();
+    dbQueryMock = vi.fn();
+    dbQueryOneMock = vi.fn();
+
     mockVectorOps = {
-      searchSimilar: vi.fn(),
-      findSimilarPatterns: vi.fn(),
+      searchSimilar: searchSimilarMock,
+      findSimilarPatterns: findSimilarPatternsMock,
     } as unknown as VectorOperationsService;
 
     mockDb = {
-      execute: vi.fn(),
-      query: vi.fn(),
-      queryOne: vi.fn(),
+      execute: dbExecuteMock,
+      query: dbQueryMock,
+      queryOne: dbQueryOneMock,
     } as unknown as DatabaseManager;
 
     mockCache = {
@@ -46,7 +57,7 @@ describe('HybridSearchEngine', () => {
   describe('analyzeQuery', () => {
     it('should classify short technical queries as specific', () => {
       const analysis = engine.analyzeQuery('factory pattern');
-      
+
       expect(analysis.queryType).toBe('specific');
       expect(analysis.recommendedStrategy).toBe('sparse');
       expect(analysis.confidence).toBeGreaterThan(0.5);
@@ -56,7 +67,7 @@ describe('HybridSearchEngine', () => {
     it('should classify long exploratory queries as exploratory', () => {
       const query = 'how to implement design patterns for better software architecture';
       const analysis = engine.analyzeQuery(query);
-      
+
       expect(analysis.queryType).toBe('exploratory');
       expect(analysis.recommendedStrategy).toBe('dense');
       expect(analysis.wordCount).toBeGreaterThan(5);
@@ -64,7 +75,7 @@ describe('HybridSearchEngine', () => {
 
     it('should detect code snippets', () => {
       const analysis = engine.analyzeQuery('pattern with `interface{}` syntax');
-      
+
       expect(analysis.hasCodeSnippet).toBe(true);
       expect(analysis.recommendedStrategy).toBe('hybrid');
     });
@@ -72,13 +83,13 @@ describe('HybridSearchEngine', () => {
     it('should calculate entropy correctly', () => {
       const analysis1 = engine.analyzeQuery('factory factory factory');
       const analysis2 = engine.analyzeQuery('factory builder singleton');
-      
+
       expect(analysis1.entropy).toBeLessThan(analysis2.entropy);
     });
 
     it('should handle queries with multiple technical terms', () => {
       const analysis = engine.analyzeQuery('factory singleton observer strategy');
-      
+
       expect(analysis.technicalTerms.length).toBeGreaterThan(2);
       expect(analysis.recommendedStrategy).toBe('hybrid');
       expect(analysis.confidence).toBeGreaterThan(0.5);
@@ -86,7 +97,7 @@ describe('HybridSearchEngine', () => {
 
     it('should return balanced classification for medium queries', () => {
       const analysis = engine.analyzeQuery('design patterns for web applications');
-      
+
       expect(analysis.queryType).toBe('balanced');
       expect(analysis.recommendedStrategy).toBe('hybrid');
     });
@@ -95,43 +106,39 @@ describe('HybridSearchEngine', () => {
   describe('search', () => {
     it('should perform blended search with dense and sparse components', async () => {
       // Mock dense search results
-      vi.mocked(mockVectorOps.searchSimilar).mockReturnValue([
+      searchSimilarMock.mockReturnValue([
         { patternId: 'factory', score: 0.85, distance: 0.15, rank: 1 },
         { patternId: 'builder', score: 0.75, distance: 0.25, rank: 2 },
       ]);
 
       // Mock sparse search results (simplified)
-      vi.mocked(mockDb.query).mockReturnValue([
-        { id: 'factory' },
-        { id: 'builder' },
-        { id: 'singleton' },
-      ]);
+      dbQueryMock.mockReturnValue([{ id: 'factory' }, { id: 'builder' }, { id: 'singleton' }]);
 
-      vi.mocked(mockDb.queryOne).mockReturnValue({
+      dbQueryOneMock.mockReturnValue({
         term_frequency: 2,
         doc_count: 1,
       });
 
-      const queryEmbedding = new Array(384).fill(0.1);
+      const queryEmbedding: number[] = Array.from({ length: 384 }, () => 0.1);
       const results = await engine.search('factory pattern', queryEmbedding);
 
       expect(results).toBeDefined();
       expect(Array.isArray(results)).toBe(true);
-      expect(mockVectorOps.searchSimilar).toHaveBeenCalled();
+      expect(searchSimilarMock).toHaveBeenCalled();
     });
 
     it('should handle empty search results gracefully', async () => {
-      vi.mocked(mockVectorOps.searchSimilar).mockReturnValue([]);
-      vi.mocked(mockDb.query).mockReturnValue([]);
+      searchSimilarMock.mockReturnValue([]);
+      dbQueryMock.mockReturnValue([]);
 
-      const queryEmbedding = new Array(384).fill(0.1);
+      const queryEmbedding: number[] = Array.from({ length: 384 }, () => 0.1);
       const results = await engine.search('nonexistent pattern', queryEmbedding);
 
       expect(results).toEqual([]);
     });
 
     it('should apply semantic compression for diversity', async () => {
-      vi.mocked(mockVectorOps.searchSimilar).mockReturnValue([
+      searchSimilarMock.mockReturnValue([
         { patternId: 'factory', score: 0.9, distance: 0.1, rank: 1 },
         { patternId: 'abstract-factory', score: 0.88, distance: 0.12, rank: 2 },
         { patternId: 'builder', score: 0.85, distance: 0.15, rank: 3 },
@@ -140,7 +147,7 @@ describe('HybridSearchEngine', () => {
         { patternId: 'object-pool', score: 0.75, distance: 0.25, rank: 6 },
       ]);
 
-      vi.mocked(mockDb.query).mockReturnValue([
+      dbQueryMock.mockReturnValue([
         { id: 'factory' },
         { id: 'abstract-factory' },
         { id: 'builder' },
@@ -149,12 +156,12 @@ describe('HybridSearchEngine', () => {
         { id: 'object-pool' },
       ]);
 
-      vi.mocked(mockDb.queryOne).mockReturnValue({
+      dbQueryOneMock.mockReturnValue({
         term_frequency: 1,
         doc_count: 1,
       });
 
-      const queryEmbedding = new Array(384).fill(0.1);
+      const queryEmbedding: number[] = Array.from({ length: 384 }, () => 0.1);
       const results = await engine.search('creational patterns', queryEmbedding);
 
       expect(results.length).toBeLessThanOrEqual(10);
@@ -167,7 +174,7 @@ describe('HybridSearchEngine', () => {
 
   describe('graphAugmentedRetrieval', () => {
     it('should perform graph traversal for related patterns', async () => {
-      vi.mocked(mockVectorOps.findSimilarPatterns).mockReturnValue([
+      findSimilarPatternsMock.mockReturnValue([
         { patternId: 'abstract-factory', score: 0.8 },
         { patternId: 'factory-method', score: 0.75 },
       ]);
@@ -189,13 +196,13 @@ describe('HybridSearchEngine', () => {
 
       expect(graphResults).toBeDefined();
       expect(Array.isArray(graphResults)).toBe(true);
-      expect(mockVectorOps.findSimilarPatterns).toHaveBeenCalled();
+      expect(findSimilarPatternsMock).toHaveBeenCalled();
     });
   });
 
   describe('updateAdaptiveWeights', () => {
     it('should update weights based on positive feedback', async () => {
-      const executeSpy = vi.spyOn(mockDb, 'execute');
+      const executeSpy = dbExecuteMock;
 
       await engine.updateAdaptiveWeights('user123', 'factory pattern', ['factory'], 'positive');
 
@@ -206,7 +213,7 @@ describe('HybridSearchEngine', () => {
     });
 
     it('should update weights based on negative feedback', async () => {
-      const executeSpy = vi.spyOn(mockDb, 'execute');
+      const executeSpy = dbExecuteMock;
 
       await engine.updateAdaptiveWeights('user123', 'factory pattern', [], 'negative');
 
@@ -246,7 +253,7 @@ describe('HybridSearchEngine', () => {
         },
       ];
 
-      vi.mocked(mockVectorOps.findSimilarPatterns).mockReturnValue([
+      findSimilarPatternsMock.mockReturnValue([
         { patternId: 'abstract-factory', score: 0.8 },
         { patternId: 'factory-method', score: 0.75 },
       ]);

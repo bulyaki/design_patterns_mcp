@@ -13,6 +13,10 @@ import { createTempDatabasePath, cleanupTempDatabase } from '../helpers/test-db.
 import type { PatternRequest } from '../../src/types/search-types.js';
 import { DatabaseManager } from '../../src/services/database-manager.js';
 
+function createQueryEmbedding(): number[] {
+  return Array.from({ length: 384 }, () => 0.1);
+}
+
 describe('Blended RAG Integration', () => {
   let db: DatabaseManager;
   let vectorOps: VectorOperationsService;
@@ -26,9 +30,9 @@ describe('Blended RAG Integration', () => {
     tempDbPath = createTempDatabasePath('blended-rag-test');
     db = new DatabaseManager({ filename: tempDbPath, options: { readonly: false } });
     await db.initialize();
-    
+
     // Create patterns table
-    await db.execDDL(`
+    db.execDDL(`
       CREATE TABLE patterns (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -46,9 +50,9 @@ describe('Blended RAG Integration', () => {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    
+
     // Create pattern_relationships table
-    await db.execDDL(`
+    db.execDDL(`
       CREATE TABLE pattern_relationships (
         id TEXT PRIMARY KEY,
         source_pattern_id TEXT NOT NULL,
@@ -63,7 +67,7 @@ describe('Blended RAG Integration', () => {
     `);
 
     // Create pattern_implementations table
-    await db.execDDL(`
+    db.execDDL(`
       CREATE TABLE pattern_implementations (
         id TEXT PRIMARY KEY,
         pattern_id TEXT NOT NULL,
@@ -78,7 +82,7 @@ describe('Blended RAG Integration', () => {
     `);
 
     // Create sparse_terms table for hybrid search engine
-    await db.execDDL(`
+    db.execDDL(`
       CREATE TABLE sparse_terms (
         pattern_id TEXT NOT NULL,
         term TEXT NOT NULL,
@@ -86,51 +90,88 @@ describe('Blended RAG Integration', () => {
         PRIMARY KEY (pattern_id, term)
       )
     `);
-    
+
     // Mock vector operations service
     vectorOps = {
       searchSimilar: () => [
-        { 
-          patternId: 'factory', 
-          score: 0.85, 
-          distance: 0.15, 
+        {
+          patternId: 'factory',
+          score: 0.85,
+          distance: 0.15,
           rank: 1,
-          pattern: { id: 'factory', name: 'Factory Pattern', category: 'Creational', description: 'Creates objects without specifying exact class', tags: [] }
+          pattern: {
+            id: 'factory',
+            name: 'Factory Pattern',
+            category: 'Creational',
+            description: 'Creates objects without specifying exact class',
+            tags: [],
+          },
         },
-        { 
-          patternId: 'builder', 
-          score: 0.75, 
-          distance: 0.25, 
+        {
+          patternId: 'builder',
+          score: 0.75,
+          distance: 0.25,
           rank: 2,
-          pattern: { id: 'builder', name: 'Builder Pattern', category: 'Creational', description: 'Constructs complex objects step by step', tags: [] }
+          pattern: {
+            id: 'builder',
+            name: 'Builder Pattern',
+            category: 'Creational',
+            description: 'Constructs complex objects step by step',
+            tags: [],
+          },
         },
-        { 
-          patternId: 'singleton', 
-          score: 0.7, 
-          distance: 0.3, 
+        {
+          patternId: 'singleton',
+          score: 0.7,
+          distance: 0.3,
           rank: 3,
-          pattern: { id: 'singleton', name: 'Singleton Pattern', category: 'Creational', description: 'Ensures a class has only one instance', tags: [] }
+          pattern: {
+            id: 'singleton',
+            name: 'Singleton Pattern',
+            category: 'Creational',
+            description: 'Ensures a class has only one instance',
+            tags: [],
+          },
         },
-        { 
-          patternId: 'abstract-factory', 
-          score: 0.65, 
-          distance: 0.35, 
+        {
+          patternId: 'abstract-factory',
+          score: 0.65,
+          distance: 0.35,
           rank: 4,
-          pattern: { id: 'abstract-factory', name: 'Abstract Factory Pattern', category: 'Creational', description: 'Provides an interface for creating families of related objects', tags: [] }
+          pattern: {
+            id: 'abstract-factory',
+            name: 'Abstract Factory Pattern',
+            category: 'Creational',
+            description: 'Provides an interface for creating families of related objects',
+            tags: [],
+          },
         },
-        { 
-          patternId: 'factory-method', 
-          score: 0.6, 
-          distance: 0.4, 
+        {
+          patternId: 'factory-method',
+          score: 0.6,
+          distance: 0.4,
           rank: 5,
-          pattern: { id: 'factory-method', name: 'Factory Method Pattern', category: 'Creational', description: 'Defines an interface for creating an object, but lets subclasses decide which class to instantiate', tags: [] }
+          pattern: {
+            id: 'factory-method',
+            name: 'Factory Method Pattern',
+            category: 'Creational',
+            description:
+              'Defines an interface for creating an object, but lets subclasses decide which class to instantiate',
+            tags: [],
+          },
         },
-        { 
-          patternId: 'prototype', 
-          score: 0.55, 
-          distance: 0.45, 
+        {
+          patternId: 'prototype',
+          score: 0.55,
+          distance: 0.45,
           rank: 6,
-          pattern: { id: 'prototype', name: 'Prototype Pattern', category: 'Creational', description: 'Creates new objects by copying an existing object', tags: [] }
+          pattern: {
+            id: 'prototype',
+            name: 'Prototype Pattern',
+            category: 'Creational',
+            description: 'Creates new objects by copying an existing object',
+            tags: [],
+          },
         },
       ],
       findSimilarPatterns: () => [
@@ -138,13 +179,13 @@ describe('Blended RAG Integration', () => {
         { patternId: 'factory-method', score: 0.75 },
       ],
       // Add other required methods
-      storeEmbedding: async () => {},
+      storeEmbedding: () => Promise.resolve(),
       createVectorIndex: () => {},
       hasVectorIndex: () => false,
     } as unknown as VectorOperationsService;
 
     cache = new CacheService();
-    
+
     // Create hybrid search engine
     hybridEngine = new HybridSearchEngine(vectorOps, db, cache, {
       denseWeight: 0.6,
@@ -173,7 +214,7 @@ describe('Blended RAG Integration', () => {
   describe('HybridSearchEngine', () => {
     it('should perform blended search with dense + sparse indexes', async () => {
       // Insert test patterns
-      await db.execute(
+      db.execute(
         `INSERT INTO patterns (id, name, category, description, complexity, tags, code_examples, relationships, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -190,7 +231,7 @@ describe('Blended RAG Integration', () => {
         ]
       );
 
-      await db.execute(
+      db.execute(
         `INSERT INTO patterns (id, name, category, description, complexity, tags, code_examples, relationships, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -207,13 +248,13 @@ describe('Blended RAG Integration', () => {
         ]
       );
 
-      const queryEmbedding = new Array(384).fill(0.1);
+      const queryEmbedding = createQueryEmbedding();
       const results = await hybridEngine.search('factory pattern', queryEmbedding);
 
       expect(results).toBeDefined();
       expect(Array.isArray(results)).toBe(true);
       expect(results.length).toBeGreaterThan(0);
-      
+
       // Verify result structure
       results.forEach(result => {
         expect(result).toHaveProperty('patternId');
@@ -255,7 +296,7 @@ describe('Blended RAG Integration', () => {
       ];
 
       for (const [id, name, category, description] of patterns) {
-        await db.execute(
+        db.execute(
           `INSERT INTO patterns (id, name, category, description, complexity, tags, code_examples, relationships, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
@@ -273,7 +314,7 @@ describe('Blended RAG Integration', () => {
         );
       }
 
-      const queryEmbedding = new Array(384).fill(0.1);
+      const queryEmbedding = createQueryEmbedding();
       const results = await hybridEngine.search('creational patterns', queryEmbedding);
 
       // Should have diversity scores
@@ -287,7 +328,7 @@ describe('Blended RAG Integration', () => {
   describe('SearchMediator', () => {
     it('should coordinate search operations using mediator pattern', async () => {
       // Insert test pattern
-      await db.execute(
+      db.execute(
         `INSERT INTO patterns (id, name, category, description, complexity, tags, code_examples, relationships, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -315,7 +356,7 @@ describe('Blended RAG Integration', () => {
 
       expect(recommendations).toBeDefined();
       expect(Array.isArray(recommendations)).toBe(true);
-      
+
       if (recommendations.length > 0) {
         const recommendation = recommendations[0];
         expect(recommendation).toHaveProperty('pattern');
@@ -326,7 +367,7 @@ describe('Blended RAG Integration', () => {
     });
 
     it('should cache search results', async () => {
-      await db.execute(
+      db.execute(
         `INSERT INTO patterns (id, name, category, description, complexity, tags, code_examples, relationships, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -351,7 +392,7 @@ describe('Blended RAG Integration', () => {
 
       // First search (should cache)
       const results1 = await searchMediator.search(request);
-      
+
       // Second search (should use cache)
       const results2 = await searchMediator.search(request);
 
@@ -359,7 +400,7 @@ describe('Blended RAG Integration', () => {
     });
 
     it('should apply fuzzy refinement when enabled', async () => {
-      await db.execute(
+      db.execute(
         `INSERT INTO patterns (id, name, category, description, complexity, tags, code_examples, relationships, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -406,7 +447,7 @@ describe('Blended RAG Integration', () => {
       ];
 
       for (const [id, name, category, description] of patterns) {
-        await db.execute(
+        db.execute(
           `INSERT INTO patterns (id, name, category, description, complexity, tags, code_examples, relationships, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
@@ -425,13 +466,13 @@ describe('Blended RAG Integration', () => {
       }
 
       const startTime = Date.now();
-      const queryEmbedding = new Array(384).fill(0.1);
+      const queryEmbedding = createQueryEmbedding();
       const results = await hybridEngine.search('design patterns', queryEmbedding);
       const duration = Date.now() - startTime;
 
       expect(results.length).toBeGreaterThan(0);
       expect(duration).toBeLessThan(5000); // Should complete within 5 seconds
-      
+
       // Log performance for monitoring
       console.log(`Blended RAG search completed in ${duration}ms with ${results.length} results`);
     });
@@ -444,10 +485,8 @@ describe('Blended RAG Integration', () => {
         'observer pattern',
       ];
 
-      const queryEmbedding = new Array(384).fill(0.1);
-      const searchPromises = queries.map(query => 
-        hybridEngine.search(query, queryEmbedding)
-      );
+      const queryEmbedding = createQueryEmbedding();
+      const searchPromises = queries.map(query => hybridEngine.search(query, queryEmbedding));
 
       const startTime = Date.now();
       const results = await Promise.all(searchPromises);
@@ -468,7 +507,7 @@ describe('Blended RAG Integration', () => {
       const emptyVectorOps = {
         searchSimilar: () => [],
         findSimilarPatterns: () => [],
-        storeEmbedding: async () => {},
+        storeEmbedding: () => Promise.resolve(),
         createVectorIndex: () => {},
         hasVectorIndex: () => false,
       } as unknown as VectorOperationsService;
@@ -480,14 +519,14 @@ describe('Blended RAG Integration', () => {
         similarityThreshold: 0.3,
       });
 
-      const queryEmbedding = new Array(384).fill(0.1);
+      const queryEmbedding = createQueryEmbedding();
       const results = await emptyHybridEngine.search('factory pattern', queryEmbedding);
 
       expect(results).toEqual([]);
     });
 
     it('should handle malformed queries', async () => {
-      const queryEmbedding = new Array(384).fill(0.1);
+      const queryEmbedding = createQueryEmbedding();
       const results = await hybridEngine.search('', queryEmbedding);
 
       expect(results).toBeDefined();
@@ -502,7 +541,7 @@ describe('Blended RAG Integration', () => {
       };
 
       const recommendations = await searchMediator.search(request);
-      
+
       expect(recommendations).toEqual([]);
     });
   });

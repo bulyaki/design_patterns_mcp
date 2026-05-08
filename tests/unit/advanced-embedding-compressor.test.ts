@@ -4,11 +4,11 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { 
-  AdvancedEmbeddingCompressor, 
+import {
+  AdvancedEmbeddingCompressor,
   CompressionTechnique,
   AdvancedCompressionConfig,
-  createAdvancedEmbeddingCompressor 
+  createAdvancedEmbeddingCompressor,
 } from '../../src/services/advanced-embedding-compressor.js';
 
 describe('AdvancedEmbeddingCompressor', () => {
@@ -17,10 +17,11 @@ describe('AdvancedEmbeddingCompressor', () => {
 
   beforeEach(() => {
     // Create test embedding (384 dimensions, typical for sentence transformers)
-    testEmbedding = Array.from({ length: 384 }, (_, i) => 
-      Math.sin(i * 0.1) * 0.5 + Math.random() * 0.1
+    testEmbedding = Array.from(
+      { length: 384 },
+      (_, i) => Math.sin(i * 0.1) * 0.5 + Math.random() * 0.1
     );
-    
+
     compressor = new AdvancedEmbeddingCompressor({
       targetVariance: 0.95,
       maxDimensions: 128,
@@ -35,12 +36,12 @@ describe('AdvancedEmbeddingCompressor', () => {
   describe('Compression Techniques', () => {
     it('should compress with PCA technique', async () => {
       const result = await compressor.compress(testEmbedding, CompressionTechnique.PCA);
-      
+
       expect(result).toBeDefined();
       expect(result.technique).toBe(CompressionTechnique.PCA);
       expect(result.compressed).toBeDefined();
       expect(result.stats).toBeDefined();
-      
+
       // Verify compression stats
       expect(result.stats.compressionRatio).toBeGreaterThan(1);
       expect(result.stats.memorySavings).toBeGreaterThan(0);
@@ -51,8 +52,11 @@ describe('AdvancedEmbeddingCompressor', () => {
     });
 
     it('should compress with 8-bit quantization', async () => {
-      const result = await compressor.compress(testEmbedding, CompressionTechnique.QUANTIZATION_8BIT);
-      
+      const result = await compressor.compress(
+        testEmbedding,
+        CompressionTechnique.QUANTIZATION_8BIT
+      );
+
       expect(result).toBeDefined();
       expect(result.technique).toBe(CompressionTechnique.QUANTIZATION_8BIT);
       expect(result.compressed).toBeInstanceOf(Int8Array);
@@ -62,8 +66,11 @@ describe('AdvancedEmbeddingCompressor', () => {
     });
 
     it('should compress with 4-bit quantization', async () => {
-      const result = await compressor.compress(testEmbedding, CompressionTechnique.QUANTIZATION_4BIT);
-      
+      const result = await compressor.compress(
+        testEmbedding,
+        CompressionTechnique.QUANTIZATION_4BIT
+      );
+
       expect(result).toBeDefined();
       expect(result.technique).toBe(CompressionTechnique.QUANTIZATION_4BIT);
       expect(result.compressed).toBeInstanceOf(Int8Array); // 4-bit packed in Int8Array
@@ -71,8 +78,11 @@ describe('AdvancedEmbeddingCompressor', () => {
     });
 
     it('should compress with knowledge distillation', async () => {
-      const result = await compressor.compress(testEmbedding, CompressionTechnique.KNOWLEDGE_DISTILLATION);
-      
+      const result = await compressor.compress(
+        testEmbedding,
+        CompressionTechnique.KNOWLEDGE_DISTILLATION
+      );
+
       expect(result).toBeDefined();
       expect(result.technique).toBe(CompressionTechnique.KNOWLEDGE_DISTILLATION);
       expect(Array.isArray(result.compressed)).toBe(true);
@@ -81,8 +91,11 @@ describe('AdvancedEmbeddingCompressor', () => {
     });
 
     it('should compress with product quantization', async () => {
-      const result = await compressor.compress(testEmbedding, CompressionTechnique.PRODUCT_QUANTIZATION);
-      
+      const result = await compressor.compress(
+        testEmbedding,
+        CompressionTechnique.PRODUCT_QUANTIZATION
+      );
+
       expect(result).toBeDefined();
       expect(result.technique).toBe(CompressionTechnique.PRODUCT_QUANTIZATION);
       expect(Array.isArray(result.compressed)).toBe(true);
@@ -92,7 +105,7 @@ describe('AdvancedEmbeddingCompressor', () => {
 
     it('should use adaptive compression selection', async () => {
       const result = await compressor.compress(testEmbedding, CompressionTechnique.ADAPTIVE);
-      
+
       expect(result).toBeDefined();
       expect(result.technique).toBeDefined();
       expect(result.stats.accuracyDrop).toBeLessThanOrEqual(compressor['config'].minAccuracyDrop);
@@ -107,10 +120,13 @@ describe('AdvancedEmbeddingCompressor', () => {
         Array.from({ length: 384 }, (_, i) => Math.sin(i * 0.2) * 0.3 + Math.random() * 0.2),
       ];
 
-      const results = await compressor.batchCompress(embeddings, CompressionTechnique.QUANTIZATION_8BIT);
-      
+      const results = await compressor.batchCompress(
+        embeddings,
+        CompressionTechnique.QUANTIZATION_8BIT
+      );
+
       expect(results).toHaveLength(embeddings.length);
-      results.forEach((result, index) => {
+      results.forEach((result, _index) => {
         expect(result).toBeDefined();
         expect(result.technique).toBe(CompressionTechnique.QUANTIZATION_8BIT);
         expect(result.compressed).toBeDefined();
@@ -125,8 +141,11 @@ describe('AdvancedEmbeddingCompressor', () => {
         testEmbedding,
       ];
 
-      const results = await compressor.batchCompress(embeddings, CompressionTechnique.QUANTIZATION_8BIT);
-      
+      const results = await compressor.batchCompress(
+        embeddings,
+        CompressionTechnique.QUANTIZATION_8BIT
+      );
+
       expect(results).toHaveLength(embeddings.length);
       // All results should be valid
       results.forEach(result => {
@@ -142,10 +161,10 @@ describe('AdvancedEmbeddingCompressor', () => {
         maxDimensions: 64,
         minAccuracyDrop: 0.01, // Very strict accuracy requirement
       };
-      
+
       const strictCompressor = new AdvancedEmbeddingCompressor(config);
       const result = await strictCompressor.compress(testEmbedding, CompressionTechnique.ADAPTIVE);
-      
+
       expect(result.stats.accuracyDrop).toBeLessThanOrEqual(0.01);
       if (result.technique === CompressionTechnique.PCA) {
         expect(result.compressed.length).toBeLessThanOrEqual(64);
@@ -155,15 +174,23 @@ describe('AdvancedEmbeddingCompressor', () => {
     it('should use different quantization bits', async () => {
       const config8bit: Partial<AdvancedCompressionConfig> = { quantizationBits: 8 };
       const config4bit: Partial<AdvancedCompressionConfig> = { quantizationBits: 4 };
-      
+
       const compressor8bit = new AdvancedEmbeddingCompressor(config8bit);
       const compressor4bit = new AdvancedEmbeddingCompressor(config4bit);
-      
-      const result8bit = await compressor8bit.compress(testEmbedding, CompressionTechnique.QUANTIZATION_8BIT);
-      const result4bit = await compressor4bit.compress(testEmbedding, CompressionTechnique.QUANTIZATION_4BIT);
-      
+
+      const result8bit = await compressor8bit.compress(
+        testEmbedding,
+        CompressionTechnique.QUANTIZATION_8BIT
+      );
+      const result4bit = await compressor4bit.compress(
+        testEmbedding,
+        CompressionTechnique.QUANTIZATION_4BIT
+      );
+
       // 4-bit should have higher or equal compression ratio
-      expect(result4bit.stats.compressionRatio).toBeGreaterThanOrEqual(result8bit.stats.compressionRatio);
+      expect(result4bit.stats.compressionRatio).toBeGreaterThanOrEqual(
+        result8bit.stats.compressionRatio
+      );
       // But potentially higher accuracy drop
       expect(result4bit.stats.accuracyDrop).toBeGreaterThanOrEqual(result8bit.stats.accuracyDrop);
     });
@@ -171,30 +198,37 @@ describe('AdvancedEmbeddingCompressor', () => {
 
   describe('Performance Metrics', () => {
     it('should provide meaningful performance metrics', async () => {
-      const result = await compressor.compress(testEmbedding, CompressionTechnique.QUANTIZATION_8BIT);
-      
+      const result = await compressor.compress(
+        testEmbedding,
+        CompressionTechnique.QUANTIZATION_8BIT
+      );
+
       expect(result.stats).toHaveProperty('originalSize');
       expect(result.stats).toHaveProperty('compressedSize');
       expect(result.stats).toHaveProperty('compressionRatio');
       expect(result.stats).toHaveProperty('memorySavings');
       expect(result.stats).toHaveProperty('inferenceSpeedup');
-      
+
       // Verify calculations
       expect(result.stats.compressionRatio).toBeCloseTo(
         result.stats.originalSize / result.stats.compressedSize,
         2
       );
       expect(result.stats.memorySavings).toBeCloseTo(
-        ((result.stats.originalSize - result.stats.compressedSize) / result.stats.originalSize) * 100,
+        ((result.stats.originalSize - result.stats.compressedSize) / result.stats.originalSize) *
+          100,
         1
       );
     });
 
     it('should complete compression within reasonable time', async () => {
       const startTime = Date.now();
-      const result = await compressor.compress(testEmbedding, CompressionTechnique.QUANTIZATION_8BIT);
+      const result = await compressor.compress(
+        testEmbedding,
+        CompressionTechnique.QUANTIZATION_8BIT
+      );
       const duration = Date.now() - startTime;
-      
+
       expect(result).toBeDefined();
       expect(duration).toBeLessThan(1000); // Should complete within 1 second
     });
@@ -206,13 +240,13 @@ describe('AdvancedEmbeddingCompressor', () => {
         maxDimensions: 96,
         targetVariance: 0.9,
       });
-      
+
       expect(compressor).toBeInstanceOf(AdvancedEmbeddingCompressor);
     });
 
     it('should create compressor with default config', () => {
       const compressor = createAdvancedEmbeddingCompressor();
-      
+
       expect(compressor).toBeInstanceOf(AdvancedEmbeddingCompressor);
       // Default config should be applied
       expect(compressor['config'].maxDimensions).toBe(128);
@@ -223,8 +257,11 @@ describe('AdvancedEmbeddingCompressor', () => {
   describe('Error Handling', () => {
     it('should handle empty embeddings', async () => {
       const emptyEmbedding: number[] = [];
-      const result = await compressor.compress(emptyEmbedding, CompressionTechnique.QUANTIZATION_8BIT);
-      
+      const result = await compressor.compress(
+        emptyEmbedding,
+        CompressionTechnique.QUANTIZATION_8BIT
+      );
+
       expect(result).toBeDefined();
       expect(result.compressed).toHaveLength(0);
       expect(result.stats.compressionRatio).toBe(1);
@@ -232,17 +269,15 @@ describe('AdvancedEmbeddingCompressor', () => {
 
     it('should handle invalid compression technique', async () => {
       const invalidTechnique = 'invalid' as CompressionTechnique;
-      
-      await expect(
-        compressor.compress(testEmbedding, invalidTechnique)
-      ).rejects.toThrow();
+
+      await expect(compressor.compress(testEmbedding, invalidTechnique)).rejects.toThrow();
     });
 
     it('should handle knowledge distillation when disabled', async () => {
       const noKDCompressor = new AdvancedEmbeddingCompressor({
         useKnowledgeDistillation: false,
       });
-      
+
       await expect(
         noKDCompressor.compress(testEmbedding, CompressionTechnique.KNOWLEDGE_DISTILLATION)
       ).rejects.toThrow('Knowledge distillation not enabled');
@@ -252,7 +287,7 @@ describe('AdvancedEmbeddingCompressor', () => {
   describe('Adaptive Selection', () => {
     it('should analyze embedding characteristics', () => {
       const analysis = compressor['adaptiveSelector'].analyzeEmbedding(testEmbedding);
-      
+
       expect(analysis).toBeDefined();
       expect(analysis.recommendedTechnique).toBeDefined();
       expect(analysis.confidence).toBeGreaterThanOrEqual(0);
@@ -265,13 +300,13 @@ describe('AdvancedEmbeddingCompressor', () => {
       // Test with small embedding
       const smallEmbedding = Array.from({ length: 64 }, () => Math.random() - 0.5);
       const technique1 = compressor['selectCompressionTechnique'](smallEmbedding);
-      
+
       // Test with sparse embedding (many zeros)
-      const sparseEmbedding = Array.from({ length: 384 }, (_, i) => 
+      const sparseEmbedding = Array.from({ length: 384 }, (_, i) =>
         i % 10 === 0 ? Math.random() : 0
       );
       const technique2 = compressor['selectCompressionTechnique'](sparseEmbedding);
-      
+
       expect(technique1).toBeDefined();
       expect(technique2).toBeDefined();
       // Different embeddings might get different recommendations

@@ -3,8 +3,7 @@
  * Provides fluent interface with validation and sensible defaults
  */
 
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { resolveDatabasePath } from './path-resolver.js';
 
 export interface MCPServerConfig {
   databasePath: string;
@@ -141,8 +140,8 @@ export class MCPServerConfigBuilder {
   }
 
   /**
-    * Configure multi-level cache settings
-    */
+   * Configure multi-level cache settings
+   */
   withCacheConfig(config: MCPServerConfig['cacheConfig']): this {
     this.state.cacheConfig = config;
     return this;
@@ -202,15 +201,7 @@ export class MCPServerConfigBuilder {
    * Build configuration with validation and defaults
    */
   build(): MCPServerConfig {
-    // Get the directory of the current module for default database path
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
-    const isCompiled = __dirname.includes('dist');
-    const projectRoot = isCompiled
-      ? path.resolve(__dirname, '..', '..')
-      : path.resolve(__dirname, '..');
-
-    const defaultDbPath = path.join(projectRoot, 'data', 'design-patterns.db');
+    const defaultDbPath = resolveDatabasePath(undefined, import.meta.url);
 
     // Apply defaults and validate
     const config: MCPServerConfig = {

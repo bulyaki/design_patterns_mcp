@@ -13,6 +13,23 @@ import {
 } from '../models/vector.js';
 import { logger } from './logger.js';
 
+interface CompressionStats {
+  originalSize: number;
+  compressedSize: number;
+  compressionRatio: number;
+  memorySavings: number;
+  accuracyDrop: number;
+}
+
+interface CompressionMetadata {
+  scale?: number;
+  zeroPoint?: number;
+  pcaBasis?: number[][];
+  quantizationScale?: number;
+  quantizationZeroPoint?: number;
+  [key: string]: unknown;
+}
+
 export interface VectorConfig {
   model: EmbeddingModel;
   dimensions: number;
@@ -34,10 +51,14 @@ export class VectorOperationsService {
   private embeddingCache: Map<string, number[]> = new Map();
   private compressor: AdvancedEmbeddingCompressor | EmbeddingCompressor | null = null;
 
-  constructor(db: DatabaseManager, config: VectorConfig, compressor?: AdvancedEmbeddingCompressor | EmbeddingCompressor) {
+  constructor(
+    db: DatabaseManager,
+    config: VectorConfig,
+    compressor?: AdvancedEmbeddingCompressor | EmbeddingCompressor
+  ) {
     this.db = db;
     this.config = config;
-    
+
     if (compressor) {
       this.compressor = compressor;
     } else if (config.enableCompression) {
@@ -56,14 +77,8 @@ export class VectorOperationsService {
    */
   async compressEmbedding(embedding: number[]): Promise<{
     compressed: number[] | Int8Array | Uint8Array | Int16Array;
-    metadata: Record<string, any>;
-    stats: {
-      originalSize: number;
-      compressedSize: number;
-      compressionRatio: number;
-      memorySavings: number;
-      accuracyDrop: number;
-    };
+    metadata: CompressionMetadata;
+    stats: CompressionStats;
   }> {
     if (!this.compressor) {
       throw new Error('Compression not enabled');
@@ -79,7 +94,7 @@ export class VectorOperationsService {
     } else {
       // Use basic compressor
       const basis = this.compressor.buildPCABasis([embedding]);
-      const { compressed, quantized, stats } = this.compressor.compressWithQualityControl(embedding, basis);
+      const { quantized, stats } = this.compressor.compressWithQualityControl(embedding, basis);
       return {
         compressed: quantized.quantized,
         metadata: {
@@ -103,7 +118,7 @@ export class VectorOperationsService {
    */
   decompressEmbedding(
     compressed: number[] | Int8Array | Uint8Array | Int16Array,
-    metadata: Record<string, any>
+    metadata: CompressionMetadata
   ): number[] {
     if (!this.compressor) {
       throw new Error('Compression not enabled');
@@ -116,16 +131,20 @@ export class VectorOperationsService {
         return compressed;
       } else if (compressed instanceof Int8Array || compressed instanceof Uint8Array) {
         // Simple dequantization
-        const scale = metadata.quantizationScale || 1.0;
-        const zeroPoint = metadata.quantizationZeroPoint || 0;
+        const scale =
+          typeof metadata.quantizationScale === 'number' ? metadata.quantizationScale : 1.0;
+        const zeroPoint =
+          typeof metadata.quantizationZeroPoint === 'number' ? metadata.quantizationZeroPoint : 0;
         const result: number[] = [];
         for (let i = 0; i < compressed.length; i++) {
           result.push((compressed[i] - zeroPoint) * scale);
         }
         return result;
       } else if (compressed instanceof Int16Array) {
-        const scale = metadata.quantizationScale || 1.0;
-        const zeroPoint = metadata.quantizationZeroPoint || 0;
+        const scale =
+          typeof metadata.quantizationScale === 'number' ? metadata.quantizationScale : 1.0;
+        const zeroPoint =
+          typeof metadata.quantizationZeroPoint === 'number' ? metadata.quantizationZeroPoint : 0;
         const result: number[] = [];
         for (let i = 0; i < compressed.length; i++) {
           result.push((compressed[i] - zeroPoint) * scale);
@@ -136,11 +155,9 @@ export class VectorOperationsService {
     } else {
       // Basic compressor
       if (compressed instanceof Int8Array || compressed instanceof Uint8Array) {
-        return this.compressor.dequantize8Bit(
-          compressed,
-          metadata.scale,
-          metadata.zeroPoint
-        );
+        const scale = typeof metadata.scale === 'number' ? metadata.scale : 1.0;
+        const zeroPoint = typeof metadata.zeroPoint === 'number' ? metadata.zeroPoint : 0;
+        return this.compressor.dequantize8Bit(compressed, scale, zeroPoint);
       } else if (Array.isArray(compressed)) {
         return compressed;
       }
@@ -158,11 +175,11 @@ export class VectorOperationsService {
   ): Promise<{
     storedSize: number;
     compressed: boolean;
-    compressionStats?: any;
+    compressionStats?: CompressionStats;
   }> {
     let finalEmbedding = embedding;
     let compressed = false;
-    let compressionStats: any = null;
+    let compressionStats: CompressionStats | undefined;
 
     if (compress && this.compressor) {
       try {
@@ -170,12 +187,12 @@ export class VectorOperationsService {
         finalEmbedding = this.decompressEmbedding(result.compressed, result.metadata);
         compressionStats = result.stats;
         compressed = true;
-        
+
         logger.info('vector-operations', 'Embedding compressed', {
           patternId,
-          compressionRatio: compressionStats.compressionRatio.toFixed(2),
-          memorySavings: compressionStats.memorySavings.toFixed(1) + '%',
-          accuracyDrop: compressionStats.accuracyDrop.toFixed(3),
+          compressionRatio: result.stats.compressionRatio.toFixed(2),
+          memorySavings: result.stats.memorySavings.toFixed(1) + '%',
+          accuracyDrop: result.stats.accuracyDrop.toFixed(3),
         });
       } catch (error) {
         logger.warn('vector-operations', 'Compression failed, storing uncompressed', {
@@ -186,7 +203,7 @@ export class VectorOperationsService {
     }
 
     this.storeEmbedding(patternId, finalEmbedding);
-    
+
     return {
       storedSize: finalEmbedding.length * 4,
       compressed,
@@ -406,7 +423,8 @@ export class VectorOperationsService {
         }
       }
 
-      const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+      const whereClause =
+        whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
       // Use sqlite-vec for indexed vector search
       const sql = `
@@ -429,7 +447,7 @@ export class VectorOperationsService {
         JSON.stringify(queryEmbedding),
         ...whereParams,
         JSON.stringify(queryEmbedding),
-        maxResults ?? this.config.maxResults
+        maxResults ?? this.config.maxResults,
       ];
 
       interface VectorSearchRow {
@@ -463,8 +481,8 @@ export class VectorOperationsService {
       return results.filter(result => result.score >= minScore);
     } catch (error) {
       // Indexed search failed, fall back to linear search
-      logger.debug('vector-operations', 'Indexed search failed, falling back to linear search', { 
-        error: error instanceof Error ? error.message : String(error) 
+      logger.debug('vector-operations', 'Indexed search failed, falling back to linear search', {
+        error: error instanceof Error ? error.message : String(error),
       });
       return null;
     }
@@ -491,7 +509,7 @@ export class VectorOperationsService {
       const similarity = this.calculateSimilarity(queryEmbedding, embedding);
 
       // Apply filters
-      if (filters && !(this.matchesFilters(row.pattern_id, filters))) {
+      if (filters && !this.matchesFilters(row.pattern_id, filters)) {
         continue;
       }
 
@@ -509,9 +527,7 @@ export class VectorOperationsService {
 
     // Apply threshold and limit
     const minScore = filters?.minScore ?? 0.1;
-    const filteredResults = results
-      .filter(result => result.score >= minScore)
-      .slice(0, limit);
+    const filteredResults = results.filter(result => result.score >= minScore).slice(0, limit);
 
     // Set ranks
     filteredResults.forEach((result, index) => {
@@ -631,7 +647,9 @@ export class VectorOperationsService {
         tags: [],
       };
     } catch (error) {
-      logger.error('vector-operations', 'Failed to get pattern info', error as Error, { patternId });
+      logger.error('vector-operations', 'Failed to get pattern info', error as Error, {
+        patternId,
+      });
       return {
         id: patternId,
         name: 'Unknown Pattern',
@@ -645,9 +663,7 @@ export class VectorOperationsService {
   /**
    * Batch store embeddings
    */
-  storeEmbeddingsBatch(
-    embeddings: Array<{ patternId: string; embedding: number[] }>
-  ): void {
+  storeEmbeddingsBatch(embeddings: Array<{ patternId: string; embedding: number[] }>): void {
     this.db.transaction(() => {
       for (const { patternId, embedding } of embeddings) {
         this.storeEmbedding(patternId, embedding);
@@ -665,8 +681,6 @@ export class VectorOperationsService {
       const totalEmbeddings = this.db.queryOne<{ count: number }>(
         'SELECT COUNT(*) as count FROM pattern_embeddings'
       );
-
-
 
       // Calculate average dimensions (simplified)
       const dimensions = this.config.dimensions;
@@ -761,9 +775,7 @@ export class VectorOperationsService {
   /**
    * Calculate cluster centroids for pattern categorization
    */
-  calculateClusters(
-    clusterCount: number
-  ): Array<{ centroid: number[]; patterns: string[] }> {
+  calculateClusters(clusterCount: number): Array<{ centroid: number[]; patterns: string[] }> {
     try {
       // Get all embeddings
       const embeddings = this.db.query<{ pattern_id: string; embedding: string }>(

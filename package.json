@@ -2,24 +2,24 @@
   "name": "design-patterns-mcp",
   "version": "0.4.4",
   "description": "MCP server providing intelligent design pattern recommendations from a comprehensive catalog of 685+ patterns using semantic search, vector embeddings, TF-IDF keyword search, and blended RAG hybrid search with graph augmentation",
-  "main": "dist/mcp-server.js",
-  "module": "dist/mcp-server.js",
-  "types": "dist/mcp-server.d.ts",
+  "main": "dist/src/mcp-server.js",
+  "module": "dist/src/mcp-server.js",
+  "types": "dist/src/mcp-server.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/mcp-server.d.ts",
-      "import": "./dist/mcp-server.js",
-      "require": "./dist/mcp-server.js"
+      "types": "./dist/src/mcp-server.d.ts",
+      "import": "./dist/src/mcp-server.js",
+      "require": "./dist/src/mcp-server.js"
     },
     "./lib": {
-      "types": "./dist/lib/mcp-tools.d.ts",
-      "import": "./dist/lib/mcp-tools.js",
-      "require": "./dist/lib/mcp-tools.js"
+      "types": "./dist/src/lib/mcp-tools.d.ts",
+      "import": "./dist/src/lib/mcp-tools.js",
+      "require": "./dist/src/lib/mcp-tools.js"
     },
     "./resources": {
-      "types": "./dist/lib/mcp-resources.d.ts",
-      "import": "./dist/lib/mcp-resources.js",
-      "require": "./dist/lib/mcp-resources.js"
+      "types": "./dist/src/lib/mcp-resources.d.ts",
+      "import": "./dist/src/lib/mcp-resources.js",
+      "require": "./dist/src/lib/mcp-resources.js"
     }
   },
   "bin": {

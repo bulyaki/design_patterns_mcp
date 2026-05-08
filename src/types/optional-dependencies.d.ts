@@ -22,8 +22,10 @@ declare module 'zstd-codec' {
   export class Compressor {
     compress(buffer: Buffer): Uint8Array;
   }
-  export class Decompressor {
+  export interface Decompressor {
     decompress(buffer: Buffer): Uint8Array;
-    static new(): Decompressor;
   }
+  export const Decompressor: {
+    new (): Decompressor;
+  };
 }

@@ -39,13 +39,13 @@ class SimpleSparseEncoder implements SparseEncoder {
     this.db = db;
   }
 
-  async indexDocument(id: string, text: string): Promise<void> {
+  indexDocument(id: string, text: string): Promise<void> {
     const terms = this.tokenize(text);
     const tf = new Map<string, number>();
-    
+
     for (const term of terms) {
-      tf.set(term, (tf.get(term) || 0) + 1);
-      
+      tf.set(term, (tf.get(term) ?? 0) + 1);
+
       // Update document frequency
       if (!this.vocabulary.has(term)) {
         this.vocabulary.set(term, 0);
@@ -64,9 +64,10 @@ class SimpleSparseEncoder implements SparseEncoder {
 
     this.documentStats.set(id, { tf, length: terms.length });
     this.totalDocs++;
+    return Promise.resolve();
   }
 
-  async search(query: string, limit: number = 10): Promise<SparseResult[]> {
+  search(query: string, limit: number = 10): Promise<SparseResult[]> {
     const queryTerms = this.tokenize(query);
     const results: SparseResult[] = [];
 
@@ -88,7 +89,7 @@ class SimpleSparseEncoder implements SparseEncoder {
 
         if (termData) {
           const tf = termData.term_frequency;
-          const df = termData.doc_count || 1;
+          const df = termData.doc_count ?? 1;
           const idf = Math.log((this.totalDocs + 1) / (df + 1)) + 1;
           const termScore = tf * idf;
 
@@ -121,9 +122,9 @@ class SimpleSparseEncoder implements SparseEncoder {
 
     // Sort and rank
     results.sort((a, b) => b.score - a.score);
-    results.forEach((r, i) => r.rank = i + 1);
+    results.forEach((r, i) => (r.rank = i + 1));
 
-    return results.slice(0, limit);
+    return Promise.resolve(results.slice(0, limit));
   }
 
   getStats() {
@@ -186,7 +187,7 @@ class SemanticCompressionEngine {
 
         // MMR score: balance relevance and diversity
         const diversityScore = 1 - maxSimilarityToSelected;
-        const mmrScore = 
+        const mmrScore =
           this.config.coverageThreshold * relevanceScore +
           this.config.diversityWeight * diversityScore;
 
@@ -211,7 +212,7 @@ class SemanticCompressionEngine {
     return selected;
   }
 
-  private getEmbeddingForPattern(patternId: string): number[] | null {
+  private getEmbeddingForPattern(_patternId: string): number[] | null {
     // This would fetch from vector operations service
     // For now, return null - integration happens at service level
     return null;
@@ -256,7 +257,7 @@ export class HybridSearchEngine {
       maxResults: config?.maxResults ?? 10,
       similarityThreshold: config?.similarityThreshold ?? 0.3,
     };
-    this.telemetryService = telemetryService || null;
+    this.telemetryService = telemetryService ?? null;
   }
 
   /**
@@ -264,15 +265,33 @@ export class HybridSearchEngine {
    */
   analyzeQuery(query: string): QueryAnalysis {
     const words = query.split(/\s+/).filter(w => w.length > 0);
-    const technicalTerms = ['pattern', 'factory', 'singleton', 'observer', 'strategy', 'adapter', 'bridge', 'proxy', 'facade', 'decorator', 'composite', 'iterator', 'mediator', 'memento', 'state', 'template', 'visitor', 'architecture', 'design'];
-    
-    const detectedTerms = words.filter(w => 
-      technicalTerms.some(t => w.toLowerCase().includes(t))
-    );
+    const technicalTerms = [
+      'pattern',
+      'factory',
+      'singleton',
+      'observer',
+      'strategy',
+      'adapter',
+      'bridge',
+      'proxy',
+      'facade',
+      'decorator',
+      'composite',
+      'iterator',
+      'mediator',
+      'memento',
+      'state',
+      'template',
+      'visitor',
+      'architecture',
+      'design',
+    ];
+
+    const detectedTerms = words.filter(w => technicalTerms.some(t => w.toLowerCase().includes(t)));
 
     const entropy = new Set(query.toLowerCase()).size / Math.max(query.length, 1);
     const hasCodeSnippet = /`[^`]+`|\{[^{]+\}/.test(query);
-    
+
     let queryType: QueryAnalysis['queryType'] = 'balanced';
     let confidence = 0.5;
     let recommendedStrategy: QueryAnalysis['recommendedStrategy'] = 'hybrid';
@@ -320,10 +339,7 @@ export class HybridSearchEngine {
   /**
    * Perform dense vector search
    */
-  private async denseSearch(
-    queryEmbedding: number[],
-    context: SearchContext
-  ): Promise<DenseResult[]> {
+  private denseSearch(queryEmbedding: number[], context: SearchContext): Promise<DenseResult[]> {
     const startTime = Date.now();
 
     try {
@@ -341,26 +357,25 @@ export class HybridSearchEngine {
         resultCount: results.length,
       });
 
-      return results.map((r, index) => ({
-        patternId: r.patternId,
-        similarity: r.score,
-        distance: r.distance ?? (1 - r.score),
-        embedding: [], // Would need to fetch
-        rank: r.rank ?? index + 1,
-      }));
+      return Promise.resolve(
+        results.map((r, index) => ({
+          patternId: r.patternId,
+          similarity: r.score,
+          distance: r.distance ?? 1 - r.score,
+          embedding: [], // Would need to fetch
+          rank: r.rank ?? index + 1,
+        }))
+      );
     } catch (error) {
       logger.error('hybrid-search-engine', 'Dense search failed', error as Error);
-      return [];
+      return Promise.resolve([]);
     }
   }
 
   /**
    * Perform sparse keyword search
    */
-  private async sparseSearch(
-    query: string,
-    context: SearchContext
-  ): Promise<SparseResult[]> {
+  private async sparseSearch(query: string, context: SearchContext): Promise<SparseResult[]> {
     const startTime = Date.now();
 
     try {
@@ -429,8 +444,9 @@ export class HybridSearchEngine {
     ) => {
       const rrfScore = 1 / (60 + rank); // RRF formula
 
-      if (!combined.has(patternId)) {
-        combined.set(patternId, {
+      let entry = combined.get(patternId);
+      if (!entry) {
+        entry = {
           patternId,
           finalScore: 0,
           denseScore: 0,
@@ -442,10 +458,9 @@ export class HybridSearchEngine {
             queryAnalysis: {} as QueryAnalysis, // Will be filled later
             weights: { ...weights },
           },
-        });
+        };
+        combined.set(patternId, entry);
       }
-
-      const entry = combined.get(patternId)!;
 
       if (type === 'dense') {
         entry.denseScore = rrfScore * weights.dense;
@@ -455,7 +470,9 @@ export class HybridSearchEngine {
         entry.reasons.push(`Keyword match (rank ${rank}, score ${score.toFixed(3)})`);
       } else if (type === 'graph') {
         entry.graphScore = rrfScore * weights.graph;
-        entry.reasons.push(`Graph traversal (hops ${graphResults.find(g => g.patternId === patternId)?.hops})`);
+        entry.reasons.push(
+          `Graph traversal (hops ${graphResults.find(g => g.patternId === patternId)?.hops})`
+        );
       }
 
       if (!entry.matchTypes.includes(type)) {
@@ -478,9 +495,9 @@ export class HybridSearchEngine {
       const denseScore = entry.denseScore ?? 0;
       const sparseScore = entry.sparseScore ?? 0;
       const graphScore = entry.graphScore ?? 0;
-      
+
       entry.finalScore = denseScore + sparseScore + graphScore;
-      
+
       // Boost for hybrid matches
       if (entry.matchTypes.length > 1) {
         entry.finalScore *= 1.1;
@@ -498,7 +515,7 @@ export class HybridSearchEngine {
    * Graph-augmented retrieval (simplified implementation)
    * Based on arXiv 2507.19715
    */
-  private async graphAugmentedRetrieval(
+  private graphAugmentedRetrieval(
     denseResults: DenseResult[],
     context: SearchContext,
     hops: number = 2
@@ -512,7 +529,7 @@ export class HybridSearchEngine {
     for (const result of topResults) {
       // For each pattern, find similar patterns using vector operations
       const neighbors = this.vectorOps.findSimilarPatterns(result.patternId, 5);
-      
+
       const path = [result.patternId];
       const edgeWeights = [result.similarity];
       let cumulativeScore = result.similarity;
@@ -541,7 +558,7 @@ export class HybridSearchEngine {
       hops,
     });
 
-    return results;
+    return Promise.resolve(results);
   }
 
   /**
@@ -602,23 +619,16 @@ export class HybridSearchEngine {
       }
 
       // Step 4: Reciprocal Rank Fusion
-      let blendedResults = this.reciprocalRankFusion(
-        denseResults,
-        sparseResults,
-        graphResults,
-        {
-          dense: this.config.denseWeight,
-          sparse: this.config.sparseWeight,
-          graph: 0.2, // Fixed small weight for graph
-        }
-      );
+      let blendedResults = this.reciprocalRankFusion(denseResults, sparseResults, graphResults, {
+        dense: this.config.denseWeight,
+        sparse: this.config.sparseWeight,
+        graph: 0.2, // Fixed small weight for graph
+      });
 
       // Step 5: Apply semantic compression for diversity
       if (blendedResults.length > 5) {
-        const compressed = this.compressionEngine.compress(
-          blendedResults,
-          queryEmbedding,
-          (a, b) => this.cosineSimilarity(a, b)
+        const compressed = this.compressionEngine.compress(blendedResults, queryEmbedding, (a, b) =>
+          this.cosineSimilarity(a, b)
         );
 
         // Update results with diversity scores
@@ -635,8 +645,8 @@ export class HybridSearchEngine {
       }
 
       // Step 6: Apply minimum diversity threshold
-      blendedResults = blendedResults.filter(r => 
-        (r.diversityScore ?? 1) >= this.config.minDiversityScore
+      blendedResults = blendedResults.filter(
+        r => (r.diversityScore ?? 1) >= this.config.minDiversityScore
       );
 
       // Step 7: Limit results
@@ -660,52 +670,55 @@ export class HybridSearchEngine {
         denseSearchTime: trace.steps.find(s => s.name === 'dense_search')?.duration,
         sparseSearchTime: trace.steps.find(s => s.name === 'sparse_search')?.duration,
         graphTraversalTime: trace.steps.find(s => s.name === 'graph_traversal')?.duration,
-        diversityScore: blendedResults.reduce((sum, r) => sum + (r.diversityScore ?? 0), 0) / blendedResults.length,
-        avgRelevance: blendedResults.reduce((sum, r) => sum + r.finalScore, 0) / blendedResults.length,
+        diversityScore:
+          blendedResults.reduce((sum, r) => sum + (r.diversityScore ?? 0), 0) /
+          blendedResults.length,
+        avgRelevance:
+          blendedResults.reduce((sum, r) => sum + r.finalScore, 0) / blendedResults.length,
       };
 
-       // Record telemetry
-       if (this.telemetryService) {
-         this.telemetryService.recordSearchMetrics(metrics);
-         
-         // Record trace if steps were collected
-         if (trace.steps.length > 0) {
-           this.telemetryService.recordTrace(trace);
-         }
-       }
+      // Record telemetry
+      if (this.telemetryService) {
+        this.telemetryService.recordSearchMetrics(metrics);
 
-       logger.info('hybrid-search-engine', 'Search completed', {
-         contextId: searchContext.id,
-         query: query.substring(0, 50),
-         strategy: searchContext.strategy,
-         durationMs: duration,
-         results: blendedResults.length,
-         queryType: queryAnalysis.queryType,
-         confidence: queryAnalysis.confidence,
-       });
+        // Record trace if steps were collected
+        if (trace.steps.length > 0) {
+          this.telemetryService.recordTrace(trace);
+        }
+      }
 
-       return blendedResults;
-     } catch (error) {
-       // Record error telemetry
-       if (this.telemetryService) {
-         this.telemetryService.recordEvent({
-           type: 'search_error',
-           timestamp: new Date(),
-           context: {
-             query: query.substring(0, 100),
-             contextId: searchContext.id,
-             strategy: searchContext.strategy,
-             userId: searchContext.userId,
-             sessionId: searchContext.sessionId,
-           },
-         });
-       }
+      logger.info('hybrid-search-engine', 'Search completed', {
+        contextId: searchContext.id,
+        query: query.substring(0, 50),
+        strategy: searchContext.strategy,
+        durationMs: duration,
+        results: blendedResults.length,
+        queryType: queryAnalysis.queryType,
+        confidence: queryAnalysis.confidence,
+      });
 
-       logger.error('hybrid-search-engine', 'Search failed', error as Error, {
-         query,
-         contextId: searchContext.id,
-       });
-       throw error;
+      return blendedResults;
+    } catch (error) {
+      // Record error telemetry
+      if (this.telemetryService) {
+        this.telemetryService.recordEvent({
+          type: 'search_error',
+          timestamp: new Date(),
+          context: {
+            query: query.substring(0, 100),
+            contextId: searchContext.id,
+            strategy: searchContext.strategy,
+            userId: searchContext.userId,
+            sessionId: searchContext.sessionId,
+          },
+        });
+      }
+
+      logger.error('hybrid-search-engine', 'Search failed', error as Error, {
+        query,
+        contextId: searchContext.id,
+      });
+      throw error;
     }
   }
 
@@ -713,17 +726,17 @@ export class HybridSearchEngine {
    * Multi-hop reasoning with LLM integration
    * Based on arXiv 2502.18458
    */
-  async multiHopReasoning(
-    query: string,
+  multiHopReasoning(
+    _query: string,
     initialResults: BlendedResult[],
-    llmBridge: any // Would be LLM bridge service
+    _llmBridge: unknown // Would be LLM bridge service
   ): Promise<MultiHopResult[]> {
     const results: MultiHopResult[] = [];
 
     for (const result of initialResults.slice(0, 5)) {
       // Find related patterns
       const related = this.vectorOps.findSimilarPatterns(result.patternId, 3);
-      
+
       // Build reasoning path
       const reasoningPath = related.map(r => ({
         intermediatePattern: r.patternId,
@@ -739,13 +752,13 @@ export class HybridSearchEngine {
       });
     }
 
-    return results;
+    return Promise.resolve(results);
   }
 
   /**
    * Update adaptive weights based on user feedback
    */
-  async updateAdaptiveWeights(
+  updateAdaptiveWeights(
     userId: string,
     query: string,
     selectedResults: string[],
@@ -772,7 +785,9 @@ export class HybridSearchEngine {
       query: query.substring(0, 50),
       feedback,
       queryType: analysis.queryType,
+      selectedResults,
     });
+    return Promise.resolve();
   }
 
   /**
@@ -789,7 +804,9 @@ export class HybridSearchEngine {
 
   private cosineSimilarity(a: number[], b: number[]): number {
     if (a.length !== b.length) return 0;
-    let dot = 0, normA = 0, normB = 0;
+    let dot = 0,
+      normA = 0,
+      normB = 0;
     for (let i = 0; i < a.length; i++) {
       dot += a[i] * b[i];
       normA += a[i] * a[i];

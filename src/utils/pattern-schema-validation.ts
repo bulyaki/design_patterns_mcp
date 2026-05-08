@@ -2,12 +2,20 @@
  * Pattern Schema Validation
  * Validates pattern JSON files against defined schema
  */
-import { Pattern } from '../models/pattern.js';
-
 const RELATIONSHIP_TYPES = [
-  'uses', 'extends', 'implements', 'requires', 'validates',
-  'complements', 'enables', 'relates-to', 'depends-on',
-  'alternative-to', 'similar-to', 'precursor', 'successor'
+  'uses',
+  'extends',
+  'implements',
+  'requires',
+  'validates',
+  'complements',
+  'enables',
+  'relates-to',
+  'depends-on',
+  'alternative-to',
+  'similar-to',
+  'precursor',
+  'successor',
 ];
 
 export interface ValidationResult {
@@ -38,13 +46,27 @@ export interface PatternSchema {
 export const PATTERN_SCHEMA: PatternSchema = {
   required: ['id', 'name', 'category', 'description'],
   optional: [
-    'when_to_use', 'benefits', 'drawbacks', 'use_cases', 'complexity',
-    'tags', 'examples', 'relationships', 'relatedPatterns', 'related_patterns',
-    'implementation', 'alsoKnownAs', 'structure', 'participants',
-    'collaborations', 'consequences', 'useCases', 'metadata'
+    'when_to_use',
+    'benefits',
+    'drawbacks',
+    'use_cases',
+    'complexity',
+    'tags',
+    'examples',
+    'relationships',
+    'relatedPatterns',
+    'related_patterns',
+    'implementation',
+    'alsoKnownAs',
+    'structure',
+    'participants',
+    'collaborations',
+    'consequences',
+    'useCases',
+    'metadata',
   ],
   relationshipRequired: ['target_pattern_id', 'type'],
-  relationshipOptional: ['description', 'strength']
+  relationshipOptional: ['description', 'strength'],
 };
 
 export function validatePattern(data: unknown): ValidationResult {
@@ -52,7 +74,11 @@ export function validatePattern(data: unknown): ValidationResult {
   const warnings: ValidationWarning[] = [];
 
   if (!data || typeof data !== 'object') {
-    return { valid: false, errors: [{ field: 'root', message: 'Pattern must be an object' }], warnings: [] };
+    return {
+      valid: false,
+      errors: [{ field: 'root', message: 'Pattern must be an object' }],
+      warnings: [],
+    };
   }
 
   const pattern = data as Record<string, unknown>;
@@ -63,7 +89,11 @@ export function validatePattern(data: unknown): ValidationResult {
     } else if (pattern[field] === undefined || pattern[field] === null) {
       errors.push({ field, message: `Field ${field} cannot be null or undefined` });
     } else if (typeof pattern[field] !== 'string') {
-      errors.push({ field, message: `Field ${field} must be a string`, value: typeof pattern[field] });
+      errors.push({
+        field,
+        message: `Field ${field} must be a string`,
+        value: typeof pattern[field],
+      });
     }
   }
 
@@ -72,8 +102,9 @@ export function validatePattern(data: unknown): ValidationResult {
     if (!idRegex.test(pattern.id as string)) {
       errors.push({
         field: 'id',
-        message: 'Pattern ID must start with lowercase letter and contain only lowercase letters, numbers, and hyphens',
-        value: pattern.id
+        message:
+          'Pattern ID must start with lowercase letter and contain only lowercase letters, numbers, and hyphens',
+        value: pattern.id,
       });
     }
   }
@@ -84,7 +115,7 @@ export function validatePattern(data: unknown): ValidationResult {
       warnings.push({
         field: 'complexity',
         message: `Complexity should be one of: ${validComplexities.join(', ')}`,
-        suggestion: `Use "${pattern.complexity}" or update to a valid complexity`
+        suggestion: `Use "${String(pattern.complexity)}" or update to a valid complexity`,
       });
     }
   }
@@ -92,7 +123,11 @@ export function validatePattern(data: unknown): ValidationResult {
   if (pattern.tags && Array.isArray(pattern.tags)) {
     for (let i = 0; i < (pattern.tags as unknown[]).length; i++) {
       if (typeof (pattern.tags as string[])[i] !== 'string') {
-        errors.push({ field: `tags[${i}]`, message: 'Tag must be a string', value: (pattern.tags as unknown[])[i] });
+        errors.push({
+          field: `tags[${i}]`,
+          message: 'Tag must be a string',
+          value: (pattern.tags as unknown[])[i],
+        });
       }
     }
   }
@@ -100,7 +135,10 @@ export function validatePattern(data: unknown): ValidationResult {
   if (pattern.relationships) {
     if (Array.isArray(pattern.relationships)) {
       for (let i = 0; i < (pattern.relationships as unknown[]).length; i++) {
-        const relResult = validateRelationship((pattern.relationships as unknown[])[i], `relationships[${i}]`);
+        const relResult = validateRelationship(
+          (pattern.relationships as unknown[])[i],
+          `relationships[${i}]`
+        );
         errors.push(...relResult.errors);
         warnings.push(...relResult.warnings);
       }
@@ -113,14 +151,15 @@ export function validatePattern(data: unknown): ValidationResult {
     if (typeof pattern.examples === 'string') {
       warnings.push({
         field: 'examples',
-        message: 'Examples is a plain string, consider using object format with language-specific code'
+        message:
+          'Examples is a plain string, consider using object format with language-specific code',
       });
     } else if (typeof pattern.examples === 'object') {
       const examples = pattern.examples as Record<string, unknown>;
       if (!examples.typescript && !examples.typescript) {
         warnings.push({
           field: 'examples',
-          message: 'Examples should include TypeScript implementation'
+          message: 'Examples should include TypeScript implementation',
         });
       }
     }
@@ -134,13 +173,20 @@ export function validateRelationship(data: unknown, fieldPrefix: string): Valida
   const warnings: ValidationWarning[] = [];
 
   if (!data || typeof data !== 'object') {
-    return { valid: false, errors: [{ field: fieldPrefix, message: 'Relationship must be an object' }], warnings: [] };
+    return {
+      valid: false,
+      errors: [{ field: fieldPrefix, message: 'Relationship must be an object' }],
+      warnings: [],
+    };
   }
 
   const rel = data as Record<string, unknown>;
 
   if (!rel.target_pattern_id && !rel.targetPatternId) {
-    errors.push({ field: `${fieldPrefix}.target_pattern_id`, message: 'Relationship must have target_pattern_id' });
+    errors.push({
+      field: `${fieldPrefix}.target_pattern_id`,
+      message: 'Relationship must have target_pattern_id',
+    });
   }
 
   if (!rel.type) {
@@ -148,15 +194,18 @@ export function validateRelationship(data: unknown, fieldPrefix: string): Valida
   } else if (!RELATIONSHIP_TYPES.includes(rel.type as string)) {
     warnings.push({
       field: `${fieldPrefix}.type`,
-      message: `Unknown relationship type: ${rel.type}`,
-      suggestion: `Valid types: ${RELATIONSHIP_TYPES.join(', ')}`
+      message: `Unknown relationship type: ${String(rel.type)}`,
+      suggestion: `Valid types: ${RELATIONSHIP_TYPES.join(', ')}`,
     });
   }
 
   if (rel.strength !== undefined) {
     const strength = Number(rel.strength);
     if (isNaN(strength) || strength < 0 || strength > 1) {
-      errors.push({ field: `${fieldPrefix}.strength`, message: 'Strength must be a number between 0 and 1' });
+      errors.push({
+        field: `${fieldPrefix}.strength`,
+        message: 'Strength must be a number between 0 and 1',
+      });
     }
   }
 
@@ -168,7 +217,11 @@ export function validatePatternFile(filePath: string, content: string): Validati
   try {
     parsed = JSON.parse(content);
   } catch {
-    return { valid: false, errors: [{ field: 'root', message: 'Invalid JSON syntax' }], warnings: [] };
+    return {
+      valid: false,
+      errors: [{ field: 'root', message: 'Invalid JSON syntax' }],
+      warnings: [],
+    };
   }
 
   if (Array.isArray(parsed)) {
@@ -177,7 +230,9 @@ export function validatePatternFile(filePath: string, content: string): Validati
       const patternResult = validatePattern(parsed[i]);
       result.valid = result.valid && patternResult.valid;
       result.errors.push(...patternResult.errors.map(e => ({ ...e, field: `[${i}].${e.field}` })));
-      result.warnings.push(...patternResult.warnings.map(w => ({ ...w, field: `[${i}].${w.field}` })));
+      result.warnings.push(
+        ...patternResult.warnings.map(w => ({ ...w, field: `[${i}].${w.field}` }))
+      );
     }
     return result;
   }

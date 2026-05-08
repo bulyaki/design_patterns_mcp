@@ -6,9 +6,10 @@ import { DatabaseManager } from './database-manager.js';
 import { Pattern } from '../models/pattern.js';
 import { logger } from './logger.js';
 import { isObject } from '../utils/type-guards.js';
-import { validatePattern, validateRelationship, ValidationResult as SchemaValidationResult } from '../utils/pattern-schema-validation.js';
+import { validatePattern } from '../utils/pattern-schema-validation.js';
 import fs from 'fs';
 import path from 'path';
+import { resolvePatternsPath } from '../core/path-resolver.js';
 
 interface SeederConfig {
   patternsPath: string;
@@ -64,7 +65,11 @@ export class PatternSeeder {
 
       // First pass: Load all patterns and collect relationships
       const allPatterns: Pattern[] = [];
-      const allRelationships: Array<{ sourceId: string; relationship: string | RawRelationship; filename: string }> = [];
+      const allRelationships: Array<{
+        sourceId: string;
+        relationship: string | RawRelationship;
+        filename: string;
+      }> = [];
 
       for (const file of patternFiles) {
         const loadedData = await this.loadPatternFile(file);
@@ -75,21 +80,23 @@ export class PatternSeeder {
         }
 
         const data = loadedData;
-        const patternsList = Array.isArray(data.patterns) ? data.patterns : (data.id ? [data] : []);
+        const patternsList = Array.isArray(data.patterns) ? data.patterns : data.id ? [data] : [];
 
         for (const pattern of patternsList) {
           if (!this.isValidPattern(pattern)) {
-             logger.warn('pattern-seeder', `Skipping invalid pattern in file ${file}`, { patternData: String(pattern) });
-             continue;
-           }
+            logger.warn('pattern-seeder', `Skipping invalid pattern in file ${file}`, {
+              patternData: String(pattern),
+            });
+            continue;
+          }
 
-           const schemaResult = validatePattern(pattern);
-           if (!schemaResult.valid) {
-             logger.warn('pattern-seeder', `Schema validation warnings in file ${file}`, {
-               errors: schemaResult.errors.map(e => `${e.field}: ${e.message}`),
-               warnings: schemaResult.warnings.map(w => `${w.field}: ${w.message}`)
-             });
-           }
+          const schemaResult = validatePattern(pattern);
+          if (!schemaResult.valid) {
+            logger.warn('pattern-seeder', `Schema validation warnings in file ${file}`, {
+              errors: schemaResult.errors.map(e => `${e.field}: ${e.message}`),
+              warnings: schemaResult.warnings.map(w => `${w.field}: ${w.message}`),
+            });
+          }
 
           const typedPattern = pattern;
           allPatterns.push(typedPattern);
@@ -102,9 +109,13 @@ export class PatternSeeder {
           if (relatedPatterns) {
             for (const rel of relatedPatterns) {
               // Handle potential Pattern object in relatedPatterns (if it was fully resolved in JSON) or string ID
-              const relValue = typeof rel === 'string' ? rel : (rel as Pattern).id || (rel as Pattern).name;
+              const relValue = typeof rel === 'string' ? rel : rel.id || rel.name;
               if (relValue) {
-                allRelationships.push({ sourceId: typedPattern.id, relationship: relValue, filename: file });
+                allRelationships.push({
+                  sourceId: typedPattern.id,
+                  relationship: relValue,
+                  filename: file,
+                });
               }
             }
           }
@@ -112,7 +123,11 @@ export class PatternSeeder {
           // Process new relationships format
           if (relationships) {
             for (const rel of relationships) {
-              allRelationships.push({ sourceId: typedPattern.id, relationship: rel, filename: file });
+              allRelationships.push({
+                sourceId: typedPattern.id,
+                relationship: rel,
+                filename: file,
+              });
             }
           }
         }
@@ -205,8 +220,9 @@ export class PatternSeeder {
 
     // Check required fields based on Pattern interface
     const requiredFields = ['id', 'name', 'category', 'description'];
+    const candidate = data;
     for (const field of requiredFields) {
-      if (!(field in data) || typeof (data as Record<string, unknown>)[field] !== 'string') {
+      if (!(field in candidate) || typeof candidate[field] !== 'string') {
         return false;
       }
     }
@@ -226,7 +242,7 @@ export class PatternSeeder {
       }
 
       const data = loadedData;
-      const patternsList = Array.isArray(data.patterns) ? data.patterns : (data.id ? [data] : []);
+      const patternsList = Array.isArray(data.patterns) ? data.patterns : data.id ? [data] : [];
 
       // Filter valid patterns
       const patterns: Pattern[] = [];
@@ -234,7 +250,9 @@ export class PatternSeeder {
         if (this.isValidPattern(p)) {
           patterns.push(p);
         } else {
-          logger.warn('pattern-seeder', `Skipping invalid pattern in file ${filePath}`, { patternData: String(p) });
+          logger.warn('pattern-seeder', `Skipping invalid pattern in file ${filePath}`, {
+            patternData: String(p),
+          });
         }
       }
 
@@ -281,7 +299,8 @@ export class PatternSeeder {
     let relationshipsInserted = 0;
 
     // Collect all relationships for deferred insertion
-    const allRelationships: Array<{ sourceId: string; relationship: string | RawRelationship }> = [];
+    const allRelationships: Array<{ sourceId: string; relationship: string | RawRelationship }> =
+      [];
 
     // First pass: Insert all patterns and collect relationships
     this.db.transaction(() => {
@@ -353,7 +372,9 @@ export class PatternSeeder {
   private insertPattern(pattern: Pattern): boolean {
     try {
       if (this.config.skipExisting) {
-        const existing = this.db.queryOne<{ id: string }>('SELECT id FROM patterns WHERE id = ?', [pattern.id]);
+        const existing = this.db.queryOne<{ id: string }>('SELECT id FROM patterns WHERE id = ?', [
+          pattern.id,
+        ]);
         if (existing) {
           return false; // Skip existing
         }
@@ -424,7 +445,10 @@ export class PatternSeeder {
   /**
    * Insert a pattern relationship
    */
-  private insertRelationship(sourcePatternId: string, relationship: string | RawRelationship): boolean {
+  private insertRelationship(
+    sourcePatternId: string,
+    relationship: string | RawRelationship
+  ): boolean {
     try {
       let targetPatternId: string;
       let type: string;
@@ -441,12 +465,20 @@ export class PatternSeeder {
       } else if (relationship && typeof relationship === 'object') {
         // New format: relationship is an object
         targetPatternId =
-          relationship.targetPatternId ?? relationship.target_pattern_id ?? relationship.patternId ?? relationship.name ?? 'unknown';
+          relationship.targetPatternId ??
+          relationship.target_pattern_id ??
+          relationship.patternId ??
+          relationship.name ??
+          'unknown';
         type = relationship.type ?? 'related';
         strength = relationship.strength ?? 1.0;
         description = relationship.description ?? `Related to ${targetPatternId}`;
       } else {
-        logger.warn('pattern-seeder', `Invalid relationship format for pattern ${sourcePatternId}`, { relationship: String(relationship) });
+        logger.warn(
+          'pattern-seeder',
+          `Invalid relationship format for pattern ${sourcePatternId}`,
+          { relationship: String(relationship) }
+        );
         return false;
       }
 
@@ -464,7 +496,10 @@ export class PatternSeeder {
           );
 
           if (!targetPattern) {
-            logger.warn('pattern-seeder', `Target pattern not found: ${targetPatternId} (referenced by ${sourcePatternId})`);
+            logger.warn(
+              'pattern-seeder',
+              `Target pattern not found: ${targetPatternId} (referenced by ${sourcePatternId})`
+            );
             return false;
           }
           actualTargetId = targetPattern.id;
@@ -476,12 +511,17 @@ export class PatternSeeder {
             [actualTargetId]
           );
           if (!targetPatternExists) {
-            logger.warn('pattern-seeder', `Target pattern ID not found: ${actualTargetId} (referenced by ${sourcePatternId})`);
+            logger.warn(
+              'pattern-seeder',
+              `Target pattern ID not found: ${actualTargetId} (referenced by ${sourcePatternId})`
+            );
             return false;
           }
         }
       } else {
-        logger.warn('pattern-seeder', `Invalid targetPatternId for pattern ${sourcePatternId}`, { targetPatternId: String(targetPatternId) });
+        logger.warn('pattern-seeder', `Invalid targetPatternId for pattern ${sourcePatternId}`, {
+          targetPatternId: String(targetPatternId),
+        });
         return false;
       }
 
@@ -547,7 +587,9 @@ export class PatternSeeder {
 
       // Basic validation that it's an object
       if (!isObject(parsed)) {
-        throw new Error(`Invalid JSON structure in ${filePath}: expected object, got ${typeof parsed}`);
+        throw new Error(
+          `Invalid JSON structure in ${filePath}: expected object, got ${typeof parsed}`
+        );
       }
 
       return parsed;
@@ -698,7 +740,7 @@ interface ValidationResult {
 
 // Default seeder configuration
 const DEFAULT_SEEDER_CONFIG: SeederConfig = {
-  patternsPath: './src/data/patterns',
+  patternsPath: resolvePatternsPath(import.meta.url),
   batchSize: 10,
   skipExisting: true,
 };

@@ -2,12 +2,12 @@
  * Multi-Level Cache Service
  * Implements L1 (in-memory), L2 (Redis), and L3 (persistent SQLite) caching
  * Based on RESEARCH.md Phase 2.2 - Advanced Caching & Compression
- * 
+ *
  * Architecture:
  * - L1: In-memory (microseconds, small footprint)
  * - L2: Redis/KeyDB (milliseconds, distributed, optional)
  * - L3: Compressed on-disk (persistent, SQLite)
- * 
+ *
  * Features:
  * - Write-through strategy for consistency
  * - Graceful fallback between levels
@@ -22,8 +22,6 @@ import {
   CacheMetrics,
   CompressedData,
   CacheLevel,
-  TelemetryCacheEvent,
-  inferKeyType,
   MultiLevelCacheStats,
   L2CacheStats,
   L3CacheStats,
@@ -68,11 +66,18 @@ export interface CacheServiceInterface {
   clear(): void;
   has(key: string): boolean;
   size(): number;
-  getStats(): CacheMetrics & { entries: Array<{ key: string; size: number; age: number; accessCount: number; }> };
+  getStats(): CacheMetrics & {
+    entries: Array<{ key: string; size: number; age: number; accessCount: number }>;
+  };
   getPattern(patternId: string): Pattern | null;
   setPattern(patternId: string, pattern: Pattern, ttl?: number): void;
   getSearchResults(query: string, options?: Record<string, unknown>): SearchResult[] | null;
-  setSearchResults(query: string, options: Record<string, unknown>, results: SearchResult[], ttl?: number): void;
+  setSearchResults(
+    query: string,
+    options: Record<string, unknown>,
+    results: SearchResult[],
+    ttl?: number
+  ): void;
   getEmbeddings(text: string): number[] | null;
   setEmbeddings(text: string, embeddings: number[], ttl?: number): void;
 }
@@ -84,12 +89,24 @@ export interface AsyncCacheServiceInterface {
   clear(): Promise<void>;
   has(key: string): Promise<boolean>;
   size(): Promise<number>;
-  getStats(): Promise<CacheMetrics & { entries: Array<{ key: string; size: number; age: number; accessCount: number; }> }>;
+  getStats(): Promise<
+    CacheMetrics & {
+      entries: Array<{ key: string; size: number; age: number; accessCount: number }>;
+    }
+  >;
   getFullStats(): Promise<MultiLevelCacheStats>;
   getPattern(patternId: string): Promise<Pattern | null>;
   setPattern(patternId: string, pattern: Pattern, ttl?: number): Promise<void>;
-  getSearchResults(query: string, options?: Record<string, unknown>): Promise<SearchResult[] | null>;
-  setSearchResults(query: string, options: Record<string, unknown>, results: SearchResult[], ttl?: number): Promise<void>;
+  getSearchResults(
+    query: string,
+    options?: Record<string, unknown>
+  ): Promise<SearchResult[] | null>;
+  setSearchResults(
+    query: string,
+    options: Record<string, unknown>,
+    results: SearchResult[],
+    ttl?: number
+  ): Promise<void>;
   getEmbeddings(text: string): Promise<number[] | null>;
   setEmbeddings(text: string, embeddings: number[], ttl?: number): Promise<void>;
   shutdown(): Promise<void>;
@@ -200,12 +217,21 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
     }
   }
 
+  private getSafeL3TableName(): string {
+    const tableName = this.config.l3.tableName ?? 'cache_data';
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tableName)) {
+      throw new Error(`Invalid cache table name: ${tableName}`);
+    }
+    return tableName;
+  }
+
   private initializeL3(db: DatabaseManager): void {
     this.db = db;
 
     try {
+      const tableName = this.getSafeL3TableName();
       const createTableSQL = `
-        CREATE TABLE IF NOT EXISTS ${this.config.l3.tableName} (
+        CREATE TABLE IF NOT EXISTS ${tableName} (
           key TEXT PRIMARY KEY,
           data BLOB NOT NULL,
           compressed INTEGER DEFAULT 0,
@@ -221,12 +247,13 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
       db.execute(createTableSQL);
 
       const createIndexSQL = `
-        CREATE INDEX IF NOT EXISTS idx_${this.config.l3.tableName}_timestamp
-        ON ${this.config.l3.tableName}(timestamp)
+        CREATE INDEX IF NOT EXISTS idx_${tableName}_timestamp
+        ON ${tableName}(timestamp)
       `;
 
       db.execute(createIndexSQL);
     } catch {
+      // Best-effort initialization; L3 remains unavailable if setup fails.
     }
   }
 
@@ -271,7 +298,7 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
     }
   }
 
-  private recordTelemetry(key: string, hit: boolean, level: CacheLevel, latencyMs: number): void {
+  private recordTelemetry(key: string, hit: boolean, _level: CacheLevel, _latencyMs: number): void {
     if (!this.config.global.telemetryEnabled || !this.telemetry) return;
     this.telemetry.recordCacheHit(key, hit);
   }
@@ -306,7 +333,10 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
     return null;
   }
 
-  private getFromL1<T>(key: string, guard?: (value: unknown) => value is T): { data: T | null; level: CacheLevel; latencyMs: number } {
+  private getFromL1<T>(
+    key: string,
+    guard?: (value: unknown) => value is T
+  ): { data: T | null; level: CacheLevel; latencyMs: number } {
     const startTime = Date.now();
     const entry = this.l1Cache.get(key);
 
@@ -336,7 +366,10 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
     return { data: entry.data as T, level: 'L1', latencyMs: Date.now() - startTime };
   }
 
-  private async getFromL2<T>(key: string, guard?: (value: unknown) => value is T): Promise<{ data: T | null; level: CacheLevel; latencyMs: number }> {
+  private async getFromL2<T>(
+    key: string,
+    guard?: (value: unknown) => value is T
+  ): Promise<{ data: T | null; level: CacheLevel; latencyMs: number }> {
     const startTime = Date.now();
 
     if (!this.redisConnected || !this.redisClient) {
@@ -346,7 +379,8 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
 
     try {
       const prefixedKey = `${this.config.l2.keyPrefix}${key}`;
-      const getAsync = (this.redisClient as { getAsync?: (k: string) => Promise<string | null> }).getAsync;
+      const getAsync = (this.redisClient as { getAsync?: (k: string) => Promise<string | null> })
+        .getAsync;
       const getFn = (this.redisClient as { get?: (k: string) => Promise<string | null> }).get;
 
       let data: string | null = null;
@@ -383,7 +417,10 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
     }
   }
 
-  private getFromL3<T>(key: string, guard?: (value: unknown) => value is T): { data: T | null; level: CacheLevel; latencyMs: number } {
+  private getFromL3<T>(
+    key: string,
+    guard?: (value: unknown) => value is T
+  ): { data: T | null; level: CacheLevel; latencyMs: number } {
     const startTime = Date.now();
 
     if (!this.db) {
@@ -392,9 +429,10 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
     }
 
     try {
+      const tableName = this.getSafeL3TableName();
       const selectSQL = `
         SELECT data, compressed, algorithm, original_size, access_count
-        FROM ${this.config.l3.tableName}
+        FROM ${tableName}
         WHERE key = ? AND (timestamp + ttl) > ?
       `;
 
@@ -408,7 +446,9 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
       const row = result[0] as Record<string, unknown>;
       const compressedData: CompressedData = {
         compressed: new Uint8Array(row.data as ArrayBuffer),
-        algorithm: (row.compressed as number) ? (row.algorithm as CompressedData['algorithm']) : 'none',
+        algorithm: (row.compressed as number)
+          ? (row.algorithm as CompressedData['algorithm'])
+          : 'none',
         originalSize: row.original_size as number,
         compressedSize: (row.data as ArrayBuffer).byteLength,
       };
@@ -429,7 +469,7 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
       this.metrics.levelStats.L3.hits++;
 
       const updateAccessSQL = `
-        UPDATE ${this.config.l3.tableName}
+        UPDATE ${tableName}
         SET access_count = ?, last_accessed = ?
         WHERE key = ?
       `;
@@ -487,9 +527,17 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
       const serialized = JSON.stringify(data);
       const ttlSeconds = Math.floor(ttl / 1000);
 
-      const setExAsync = (this.redisClient as { setExAsync?: (k: string, t: number, v: string) => Promise<void> }).setExAsync;
-      const setexAsync = (this.redisClient as { setexAsync?: (k: string, t: number, v: string) => Promise<void> }).setexAsync;
-      const setAsync = (this.redisClient as { setAsync?: (k: string, v: string, ex: string, ttl: number) => Promise<void> }).setAsync;
+      const setExAsync = (
+        this.redisClient as { setExAsync?: (k: string, t: number, v: string) => Promise<void> }
+      ).setExAsync;
+      const setexAsync = (
+        this.redisClient as { setexAsync?: (k: string, t: number, v: string) => Promise<void> }
+      ).setexAsync;
+      const setAsync = (
+        this.redisClient as {
+          setAsync?: (k: string, v: string, ex: string, ttl: number) => Promise<void>;
+        }
+      ).setAsync;
 
       if (typeof setExAsync === 'function') {
         await setExAsync.call(this.redisClient, prefixedKey, ttlSeconds, serialized);
@@ -499,6 +547,7 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
         await setAsync.call(this.redisClient, prefixedKey, serialized, 'EX', ttlSeconds);
       }
     } catch {
+      // Ignore L2 write failures and continue with other cache levels.
     }
   }
 
@@ -507,9 +556,10 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
 
     try {
       const compressed = this.compressSync(data);
+      const tableName = this.getSafeL3TableName();
 
       const upsertSQL = `
-        INSERT INTO ${this.config.l3.tableName}
+        INSERT INTO ${tableName}
         (key, data, compressed, algorithm, original_size, timestamp, ttl, access_count, last_accessed)
         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
         ON CONFLICT(key) DO UPDATE SET
@@ -533,6 +583,7 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
         Date.now(),
       ]);
     } catch {
+      // Ignore L3 write failures and keep best-effort caching semantics.
     }
   }
 
@@ -546,8 +597,10 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
     if (this.redisConnected && this.redisClient) {
       try {
         const prefixedKey = `${this.config.l2.keyPrefix}${key}`;
-        const delAsync = (this.redisClient as { delAsync?: (k: string) => Promise<number> }).delAsync;
-        const deleteAsync = (this.redisClient as { deleteAsync?: (k: string) => Promise<number> }).deleteAsync;
+        const delAsync = (this.redisClient as { delAsync?: (k: string) => Promise<number> })
+          .delAsync;
+        const deleteAsync = (this.redisClient as { deleteAsync?: (k: string) => Promise<number> })
+          .deleteAsync;
 
         if (typeof delAsync === 'function') {
           await delAsync.call(this.redisClient, prefixedKey);
@@ -555,14 +608,16 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
           await deleteAsync.call(this.redisClient, prefixedKey);
         }
       } catch {
+        // Ignore L2 delete failures and continue deleting from other levels.
       }
     }
 
     if (this.db) {
       try {
-        const deleteSQL = `DELETE FROM ${this.config.l3.tableName} WHERE key = ?`;
+        const deleteSQL = `DELETE FROM ${this.getSafeL3TableName()} WHERE key = ?`;
         this.db.execute(deleteSQL, [key]);
       } catch {
+        // Ignore L3 delete failures and keep best-effort semantics.
       }
     }
 
@@ -574,8 +629,10 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
 
     if (this.redisConnected && this.redisClient) {
       try {
-        const flushDbAsync = (this.redisClient as { flushDbAsync?: () => Promise<void> }).flushDbAsync;
-        const flushdbAsync = (this.redisClient as { flushdbAsync?: () => Promise<void> }).flushdbAsync;
+        const flushDbAsync = (this.redisClient as { flushDbAsync?: () => Promise<void> })
+          .flushDbAsync;
+        const flushdbAsync = (this.redisClient as { flushdbAsync?: () => Promise<void> })
+          .flushdbAsync;
 
         if (typeof flushDbAsync === 'function') {
           await flushDbAsync.call(this.redisClient);
@@ -583,14 +640,16 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
           await flushdbAsync.call(this.redisClient);
         }
       } catch {
+        // Ignore L2 clear failures and proceed with other cache levels.
       }
     }
 
     if (this.db) {
       try {
-        const deleteSQL = `DELETE FROM ${this.config.l3.tableName}`;
+        const deleteSQL = `DELETE FROM ${this.getSafeL3TableName()}`;
         this.db.execute(deleteSQL);
       } catch {
+        // Ignore L3 clear failures and reset in-memory state anyway.
       }
     }
 
@@ -608,23 +667,27 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
     };
   }
 
-  async has(key: string): Promise<boolean> {
+  has(key: string): Promise<boolean> {
     const entry = this.l1Cache.get(key);
     if (entry && !this.isExpired(entry)) {
-      return true;
+      return Promise.resolve(true);
     }
     if (entry && this.isExpired(entry)) {
       this.l1Cache.delete(key);
     }
-    return false;
+    return Promise.resolve(false);
   }
 
-  async size(): Promise<number> {
+  size(): Promise<number> {
     this.cleanExpiredL1();
-    return this.l1Cache.size;
+    return Promise.resolve(this.l1Cache.size);
   }
 
-  async getStats(): Promise<CacheMetrics & { entries: Array<{ key: string; size: number; age: number; accessCount: number; }> }> {
+  getStats(): Promise<
+    CacheMetrics & {
+      entries: Array<{ key: string; size: number; age: number; accessCount: number }>;
+    }
+  > {
     this.cleanExpiredL1();
 
     const totalHits = this.metrics.hits;
@@ -647,13 +710,13 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
       accessCount: entry.accessCount,
     }));
 
-    return {
+    return Promise.resolve({
       ...this.metrics,
       size: this.l1Cache.size,
       hitRate: totalHits + totalMisses > 0 ? totalHits / (totalHits + totalMisses) : 0,
       levelStats: this.metrics.levelStats,
       entries,
-    };
+    });
   }
 
   async getL2Stats(): Promise<L2CacheStats | null> {
@@ -680,17 +743,19 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
     }
   }
 
-  async getL3Stats(): Promise<L3CacheStats | null> {
-    if (!this.db) return null;
+  getL3Stats(): Promise<L3CacheStats | null> {
+    if (!this.db) return Promise.resolve(null);
 
     try {
-      const countResult = this.db.query(`SELECT COUNT(*) as count FROM ${this.config.l3.tableName}`);
-      const countRow = countResult?.[0] as { count?: number } | undefined;
+      const countResult = this.db.query<{ count?: number }>(
+        `SELECT COUNT(*) as count FROM ${this.getSafeL3TableName()}`
+      );
+      const countRow = countResult[0];
       const rowCount = countRow?.count ?? 0;
 
-      return { tableSize: 0, rowCount, indexSize: 0 };
+      return Promise.resolve({ tableSize: 0, rowCount, indexSize: 0 });
     } catch {
-      return null;
+      return Promise.resolve(null);
     }
   }
 
@@ -767,11 +832,13 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
 
   async getPattern(patternId: string): Promise<Pattern | null> {
     const result = await this.get<Pattern>(`pattern:${patternId}`, (v): v is Pattern => {
-      return isPatternData(v) &&
+      return (
+        isPatternData(v) &&
         'problem' in v &&
         typeof (v as Record<string, unknown>).problem === 'string' &&
         'solution' in v &&
-        typeof (v as Record<string, unknown>).solution === 'string';
+        typeof (v as Record<string, unknown>).solution === 'string'
+      );
     });
     return result;
   }
@@ -780,26 +847,43 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
     await this.set(`pattern:${patternId}`, pattern, ttl);
   }
 
-  async getSearchResults(query: string, options?: Record<string, unknown>): Promise<SearchResult[] | null> {
+  async getSearchResults(
+    query: string,
+    options?: Record<string, unknown>
+  ): Promise<SearchResult[] | null> {
     const optionsHash = this.hashObject(options ?? {});
     const key = `search:${query}:${optionsHash}`;
 
     const result = await this.get<SearchResult[]>(key, (v): v is SearchResult[] => {
       return isTypedArray(v, (item): item is SearchResult => {
-        return isObject(item) && 'pattern' in item && isPatternData(item.pattern) && 'score' in item && isNumber(item.score);
+        return (
+          isObject(item) &&
+          'pattern' in item &&
+          isPatternData(item.pattern) &&
+          'score' in item &&
+          isNumber(item.score)
+        );
       });
     });
     return result;
   }
 
-  async setSearchResults(query: string, options: Record<string, unknown>, results: SearchResult[], ttl?: number): Promise<void> {
+  async setSearchResults(
+    query: string,
+    options: Record<string, unknown>,
+    results: SearchResult[],
+    ttl?: number
+  ): Promise<void> {
     const optionsHash = this.hashObject(options || {});
     const key = `search:${query}:${optionsHash}`;
     await this.set(key, results, ttl);
   }
 
   async getEmbeddings(text: string): Promise<number[] | null> {
-    const result = await this.get<number[]>(`embedding:${text}`, (v): v is number[] => Array.isArray(v) && v.every(item => typeof item === 'number'));
+    const result = await this.get<number[]>(
+      `embedding:${text}`,
+      (v): v is number[] => Array.isArray(v) && v.every(item => typeof item === 'number')
+    );
     return result;
   }
 
@@ -819,6 +903,7 @@ export class MultiLevelCache implements AsyncCacheServiceInterface {
           await quit.call(this.redisClient);
         }
       } catch {
+        // Ignore L2 shutdown failures during cleanup.
       }
       this.redisConnected = false;
     }

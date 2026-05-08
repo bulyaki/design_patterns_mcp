@@ -15,11 +15,11 @@ import {
   SearchResult,
   CategoryInfo,
   LanguageInfo,
-  ServerStats
+  ServerStats,
 } from '../../src/lib/mcp-tools.js';
 import {
   MCPResourcesHandler,
-  DatabaseManager as ResourcesDatabaseManager
+  DatabaseManager as ResourcesDatabaseManager,
 } from '../../src/lib/mcp-resources.js';
 import { Pattern } from '../../src/models/pattern.js';
 import { PatternRequest } from '../../src/models/request.js';
@@ -68,196 +68,169 @@ describe('MCP Implementation Tests', () => {
   let toolsHandler: MCPToolsHandler;
   let resourcesHandler: MCPResourcesHandler;
 
-  beforeAll(async () => {
+  beforeAll(() => {
     const patternMatcher: PatternMatcher = {
-      findSimilarPatterns: async (_request: PatternRequest): Promise<PatternRecommendation[]> => [
-        {
-          pattern: {
-            id: 'singleton',
-            name: 'Singleton',
-            category: 'Creational',
-            description: 'Ensure a class has only one instance',
-            problem: 'Need to ensure only one instance exists',
-            solution: 'Use private constructor and static instance',
-            when_to_use: ['Need single instance', 'Global access required'],
-            benefits: ['Controlled access', 'Reduced pollution'],
-            drawbacks: ['Testing difficulty', 'Tight coupling'],
-            use_cases: ['Database connections', 'Configuration'],
-            implementations: [
-              {
-                id: 'impl-1',
-                patternId: 'singleton',
-                language: 'typescript',
-                code: 'class Singleton { private static instance: Singleton; ... }',
-                explanation: 'TypeScript Singleton implementation',
-                complexity: 'Low',
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              },
-            ],
-            complexity: 'Low',
-            popularity: 0.8,
-            tags: ['creational', 'single-instance'],
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          },
-          score: 0.85,
-          rank: 1,
-          justification: 'Matches requirement for single instance',
-          implementation: 'class Singleton { private static instance: Singleton; ... }',
-          alternatives: [],
-          context: 'General purpose application',
-        },
-      ],
-      analyzeCode: async (_code: string, _language: string): Promise<CodeAnalysisResult> => ({
-        patterns: [
+      findSimilarPatterns: (_request: PatternRequest): Promise<PatternRecommendation[]> =>
+        Promise.resolve([
           {
-            name: 'Singleton',
-            confidence: 0.8,
-            location: 'line 1',
-            description: 'Code appears to implement singleton pattern',
-          },
-        ],
-        suggestions: [
-          {
-            type: 'improvement',
-            message: 'Consider using dependency injection',
-            severity: 'info',
-          },
-        ],
-        summary: 'Code analysis completed',
-        identifiedPatterns: [
-            {
-            name: 'Singleton',
-            confidence: 0.8,
-            location: 'line 1',
-            description: 'Code appears to implement singleton pattern',
-          }
-        ]
-      }),
-    };
-
-    const semanticSearch: SemanticSearch = {
-      search: async (_query: string, _options?: unknown): Promise<SearchResult[]> => [
-        {
-          pattern: {
-            id: 'singleton',
-            name: 'Singleton',
-            category: 'Creational',
-            description: 'Ensure a class has only one instance',
-            problem: 'Need to ensure only one instance exists',
-            solution: 'Use private constructor and static instance',
-            when_to_use: ['Need single instance', 'Global access required'],
-            benefits: ['Controlled access', 'Reduced pollution'],
-            drawbacks: ['Testing difficulty', 'Tight coupling'],
-            use_cases: ['Database connections', 'Configuration'],
-            implementations: [
-              {
-                id: 'impl-1',
-                patternId: 'singleton',
-                language: 'typescript',
-                code: 'class Singleton { private static instance: Singleton; ... }',
-                explanation: 'TypeScript Singleton implementation',
-                complexity: 'Low',
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              },
-            ],
-            complexity: 'Low',
-            popularity: 0.8,
-            tags: ['creational', 'single-instance'],
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          },
-          score: 0.9,
-        },
-      ],
-    };
-
-    const patternService: PatternService = {
-      getPatternById: async (_id: string): Promise<Pattern | null> => null,
-      getAllPatterns: async (): Promise<Pattern[]> => [],
-      savePattern: async (_pattern: Pattern): Promise<void> => {},
-      updatePattern: async (_id: string, _updates: Partial<Pattern>): Promise<void> => {},
-    };
-
-    const databaseManager: MockDatabaseManager = {
-      searchPatterns: async (_query: string, _options?: unknown): Promise<SearchResult[]> => [
-        {
-          pattern: {
-            id: 'factory-method',
-            name: 'Factory Method',
-            category: 'Creational',
-            description: 'Define interface for creating object',
-            problem: 'Need to create objects without specifying exact class',
-            solution: 'Define interface for creating object, let subclasses decide',
-            when_to_use: [
-              'Object creation varies by subclass',
-              'Need to decouple client from concrete classes',
-            ],
-            benefits: [
-              'Eliminates need to bind application to specific classes',
-              'Single Responsibility',
-            ],
-            drawbacks: ['May result in many subclasses', 'Can complicate code'],
-            use_cases: ['Framework creation', 'Plugin systems'],
-            implementations: [
-              {
-                id: 'impl-2',
-                patternId: 'factory-method',
-                language: 'typescript',
-                code: 'abstract class Creator { abstract factoryMethod(): Product; }',
-                explanation: 'Abstract creator with factory method',
-                complexity: 'Medium',
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              },
-            ],
-            complexity: 'Medium',
-            popularity: 0.7,
-            tags: ['creational', 'factory'],
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          },
-          score: 0.7,
-        },
-      ],
-      updatePattern: async (_id: string, _updates: Partial<Pattern>): Promise<void> => {},
-      savePattern: async (_pattern: Pattern): Promise<void> => {},
-      getAllPatterns: async (): Promise<Pattern[]> => [
-        {
-          id: 'singleton',
-          name: 'Singleton',
-          category: 'Creational',
-          description: 'Ensure a class has only one instance',
-          problem: 'Need to ensure only one instance exists',
-          solution: 'Use private constructor and static instance',
-          when_to_use: ['Need single instance', 'Global access required'],
-          benefits: ['Controlled access', 'Reduced pollution'],
-          drawbacks: ['Testing difficulty', 'Tight coupling'],
-          use_cases: ['Database connections', 'Configuration'],
-          implementations: [
-            {
-              id: 'impl-1',
-              patternId: 'singleton',
-              language: 'typescript',
-              code: 'class Singleton { private static instance: Singleton; ... }',
-              explanation: 'TypeScript Singleton implementation',
+            pattern: {
+              id: 'singleton',
+              name: 'Singleton',
+              category: 'Creational',
+              description: 'Ensure a class has only one instance',
+              problem: 'Need to ensure only one instance exists',
+              solution: 'Use private constructor and static instance',
+              when_to_use: ['Need single instance', 'Global access required'],
+              benefits: ['Controlled access', 'Reduced pollution'],
+              drawbacks: ['Testing difficulty', 'Tight coupling'],
+              use_cases: ['Database connections', 'Configuration'],
+              implementations: [
+                {
+                  id: 'impl-1',
+                  patternId: 'singleton',
+                  language: 'typescript',
+                  code: 'class Singleton { private static instance: Singleton; ... }',
+                  explanation: 'TypeScript Singleton implementation',
+                  complexity: 'Low',
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                },
+              ],
               complexity: 'Low',
+              popularity: 0.8,
+              tags: ['creational', 'single-instance'],
               createdAt: new Date(),
               updatedAt: new Date(),
             },
+            score: 0.85,
+            rank: 1,
+            justification: 'Matches requirement for single instance',
+            implementation: 'class Singleton { private static instance: Singleton; ... }',
+            alternatives: [],
+            context: 'General purpose application',
+          },
+        ]),
+      analyzeCode: (_code: string, _language: string): Promise<CodeAnalysisResult> =>
+        Promise.resolve({
+          patterns: [
+            {
+              name: 'Singleton',
+              confidence: 0.8,
+              location: 'line 1',
+              description: 'Code appears to implement singleton pattern',
+            },
           ],
-          complexity: 'Low',
-          popularity: 0.8,
-          tags: ['creational', 'single-instance'],
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ],
-      getPatternById: async (id: string): Promise<Pattern | null> => {
-        if (id === 'singleton') {
-          return {
+          suggestions: [
+            {
+              type: 'improvement',
+              message: 'Consider using dependency injection',
+              severity: 'info',
+            },
+          ],
+          summary: 'Code analysis completed',
+          identifiedPatterns: [
+            {
+              name: 'Singleton',
+              confidence: 0.8,
+              location: 'line 1',
+              description: 'Code appears to implement singleton pattern',
+            },
+          ],
+        }),
+    };
+
+    const semanticSearch: SemanticSearch = {
+      search: (_query: string, _options?: unknown): Promise<SearchResult[]> =>
+        Promise.resolve([
+          {
+            pattern: {
+              id: 'singleton',
+              name: 'Singleton',
+              category: 'Creational',
+              description: 'Ensure a class has only one instance',
+              problem: 'Need to ensure only one instance exists',
+              solution: 'Use private constructor and static instance',
+              when_to_use: ['Need single instance', 'Global access required'],
+              benefits: ['Controlled access', 'Reduced pollution'],
+              drawbacks: ['Testing difficulty', 'Tight coupling'],
+              use_cases: ['Database connections', 'Configuration'],
+              implementations: [
+                {
+                  id: 'impl-1',
+                  patternId: 'singleton',
+                  language: 'typescript',
+                  code: 'class Singleton { private static instance: Singleton; ... }',
+                  explanation: 'TypeScript Singleton implementation',
+                  complexity: 'Low',
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                },
+              ],
+              complexity: 'Low',
+              popularity: 0.8,
+              tags: ['creational', 'single-instance'],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+            score: 0.9,
+          },
+        ]),
+    };
+
+    const patternService: PatternService = {
+      getPatternById: (_id: string): Promise<Pattern | null> => Promise.resolve(null),
+      getAllPatterns: (): Promise<Pattern[]> => Promise.resolve([]),
+      savePattern: (_pattern: Pattern): Promise<void> => Promise.resolve(),
+      updatePattern: (_id: string, _updates: Partial<Pattern>): Promise<void> => Promise.resolve(),
+    };
+
+    const databaseManager: MockDatabaseManager = {
+      searchPatterns: (_query: string, _options?: unknown): Promise<SearchResult[]> =>
+        Promise.resolve([
+          {
+            pattern: {
+              id: 'factory-method',
+              name: 'Factory Method',
+              category: 'Creational',
+              description: 'Define interface for creating object',
+              problem: 'Need to create objects without specifying exact class',
+              solution: 'Define interface for creating object, let subclasses decide',
+              when_to_use: [
+                'Object creation varies by subclass',
+                'Need to decouple client from concrete classes',
+              ],
+              benefits: [
+                'Eliminates need to bind application to specific classes',
+                'Single Responsibility',
+              ],
+              drawbacks: ['May result in many subclasses', 'Can complicate code'],
+              use_cases: ['Framework creation', 'Plugin systems'],
+              implementations: [
+                {
+                  id: 'impl-2',
+                  patternId: 'factory-method',
+                  language: 'typescript',
+                  code: 'abstract class Creator { abstract factoryMethod(): Product; }',
+                  explanation: 'Abstract creator with factory method',
+                  complexity: 'Medium',
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                },
+              ],
+              complexity: 'Medium',
+              popularity: 0.7,
+              tags: ['creational', 'factory'],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+            score: 0.7,
+          },
+        ]),
+      updatePattern: (_id: string, _updates: Partial<Pattern>): Promise<void> => Promise.resolve(),
+      savePattern: (_pattern: Pattern): Promise<void> => Promise.resolve(),
+      getAllPatterns: (): Promise<Pattern[]> =>
+        Promise.resolve([
+          {
             id: 'singleton',
             name: 'Singleton',
             category: 'Creational',
@@ -285,30 +258,65 @@ describe('MCP Implementation Tests', () => {
             tags: ['creational', 'single-instance'],
             createdAt: new Date(),
             updatedAt: new Date(),
-          };
+          },
+        ]),
+      getPatternById: (id: string): Promise<Pattern | null> => {
+        if (id === 'singleton') {
+          return Promise.resolve({
+            id: 'singleton',
+            name: 'Singleton',
+            category: 'Creational',
+            description: 'Ensure a class has only one instance',
+            problem: 'Need to ensure only one instance exists',
+            solution: 'Use private constructor and static instance',
+            when_to_use: ['Need single instance', 'Global access required'],
+            benefits: ['Controlled access', 'Reduced pollution'],
+            drawbacks: ['Testing difficulty', 'Tight coupling'],
+            use_cases: ['Database connections', 'Configuration'],
+            implementations: [
+              {
+                id: 'impl-1',
+                patternId: 'singleton',
+                language: 'typescript',
+                code: 'class Singleton { private static instance: Singleton; ... }',
+                explanation: 'TypeScript Singleton implementation',
+                complexity: 'Low',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+            ],
+            complexity: 'Low',
+            popularity: 0.8,
+            tags: ['creational', 'single-instance'],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
         }
-        return null;
+        return Promise.resolve(null);
       },
-      getPatternCategories: async (): Promise<CategoryInfo[]> => [
-        {
-          name: 'Creational',
-          count: 5,
-          description: 'Patterns for object creation',
-        },
-      ],
-      getSupportedLanguages: async (): Promise<LanguageInfo[]> => [
-        {
-          language: 'typescript',
-          count: 150,
-        },
-      ],
-      getServerStats: async (): Promise<ServerStats> => ({
-        totalPatterns: 622,
-        totalCategories: 12,
-        avgResponseTime: 150,
-        totalRequests: 42,
-        cacheHitRate: 0.85,
-      }),
+      getPatternCategories: (): Promise<CategoryInfo[]> =>
+        Promise.resolve([
+          {
+            name: 'Creational',
+            count: 5,
+            description: 'Patterns for object creation',
+          },
+        ]),
+      getSupportedLanguages: (): Promise<LanguageInfo[]> =>
+        Promise.resolve([
+          {
+            language: 'typescript',
+            count: 150,
+          },
+        ]),
+      getServerStats: (): Promise<ServerStats> =>
+        Promise.resolve({
+          totalPatterns: 622,
+          totalCategories: 12,
+          avgResponseTime: 150,
+          totalRequests: 42,
+          cacheHitRate: 0.85,
+        }),
     };
 
     toolsHandler = new MCPToolsHandler({
@@ -342,7 +350,7 @@ describe('MCP Implementation Tests', () => {
         },
       };
 
-      const response = await toolsHandler.handleToolCall(request) as {
+      const response = (await toolsHandler.handleToolCall(request)) as {
         request_id: string;
         recommendations: Array<{
           pattern: { id: string; name: string; category: string };
@@ -384,7 +392,7 @@ describe('MCP Implementation Tests', () => {
         },
       };
 
-      const response = await toolsHandler.handleToolCall(request) as {
+      const response = (await toolsHandler.handleToolCall(request)) as {
         patterns: Array<{
           pattern: { id: string; name: string; category: string };
           score: number;

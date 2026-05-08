@@ -7,7 +7,7 @@ import initSqlJs, { Database, Statement, SqlJsStatic } from 'sql.js';
 import path from 'path';
 import fs from 'fs';
 import { logger } from './logger.js';
-import { StatementPool, SqlValue, SqlParams } from './statement-pool.js';
+import { StatementPool, SqlValue } from './statement-pool.js';
 
 // sql.js type imports are available from @types/sql.js
 
@@ -318,7 +318,7 @@ export class DatabaseManager {
         indexCount: 0,
         tables: [],
         indexes: [],
-        error: 'Database not initialized'
+        error: 'Database not initialized',
       };
     }
 
@@ -366,7 +366,7 @@ export class DatabaseManager {
         indexCount: 0,
         tables: [],
         indexes: [],
-        error: `Failed to get stats: ${String(error)}`
+        error: `Failed to get stats: ${String(error)}`,
       };
     }
   }

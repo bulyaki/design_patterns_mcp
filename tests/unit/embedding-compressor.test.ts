@@ -9,9 +9,9 @@ import { EmbeddingCompressor } from '../../src/services/embedding-compressor.js'
 
 describe('EmbeddingCompressor', () => {
   let compressor: EmbeddingCompressor;
-  const testEmbedding = new Array(384).fill(0).map((_, i) => Math.sin(i * 0.1) * 0.5);
-  const testBasis = new Array(128).fill(0).map((_, i) => 
-    new Array(384).fill(0).map((_, j) => (i === j % 128 ? 1 : 0) * 0.1)
+  const testEmbedding: number[] = Array.from({ length: 384 }, (_, i) => Math.sin(i * 0.1) * 0.5);
+  const testBasis: number[][] = Array.from({ length: 128 }, (_, i) =>
+    Array.from({ length: 384 }, (_unused, j) => (i === j % 128 ? 1 : 0) * 0.1)
   );
 
   beforeEach(() => {
@@ -39,7 +39,7 @@ describe('EmbeddingCompressor', () => {
       expect(result).toHaveProperty('compressed');
       expect(result).toHaveProperty('explainedVariance');
       expect(result).toHaveProperty('retainedDimensions');
-      
+
       expect(result.compressed.length).toBeLessThanOrEqual(testEmbedding.length);
       expect(result.explainedVariance).toBeGreaterThanOrEqual(0);
       expect(result.explainedVariance).toBeLessThanOrEqual(1);
@@ -51,8 +51,13 @@ describe('EmbeddingCompressor', () => {
     });
 
     it('should validate basis dimensions', () => {
-      const invalidBasis = [[1, 2], [3, 4]]; // 2x2 instead of 384
-      expect(() => compressor.compressPCA(testEmbedding, invalidBasis)).toThrow('Invalid basis matrix dimensions');
+      const invalidBasis = [
+        [1, 2],
+        [3, 4],
+      ]; // 2x2 instead of 384
+      expect(() => compressor.compressPCA(testEmbedding, invalidBasis)).toThrow(
+        'Invalid basis matrix dimensions'
+      );
     });
 
     it('should return original when variance threshold not met', () => {
@@ -85,7 +90,7 @@ describe('EmbeddingCompressor', () => {
     });
 
     it('should handle constant embedding', () => {
-      const constantEmbedding = new Array(100).fill(0.5);
+      const constantEmbedding: number[] = Array.from({ length: 100 }, () => 0.5);
       const result = compressor.quantize8Bit(constantEmbedding);
 
       expect(result.quantized.length).toBe(constantEmbedding.length);
@@ -94,7 +99,7 @@ describe('EmbeddingCompressor', () => {
 
     it('should produce values in int8 range', () => {
       const result = compressor.quantize8Bit(testEmbedding);
-      
+
       for (let i = 0; i < result.quantized.length; i++) {
         expect(result.quantized[i]).toBeGreaterThanOrEqual(-128);
         expect(result.quantized[i]).toBeLessThanOrEqual(127);
@@ -112,7 +117,7 @@ describe('EmbeddingCompressor', () => {
       );
 
       expect(dequantized.length).toBe(testEmbedding.length);
-      
+
       // Check approximate reconstruction
       for (let i = 0; i < testEmbedding.length; i++) {
         const error = Math.abs(testEmbedding[i] - dequantized[i]);
@@ -124,9 +129,9 @@ describe('EmbeddingCompressor', () => {
       const quantized = new Int8Array([-128, 0, 127]);
       const scale = 0.1;
       const zeroPoint = 0;
-      
+
       const dequantized = compressor.dequantize8Bit(quantized, scale, zeroPoint);
-      
+
       expect(dequantized[0]).toBeCloseTo(-12.8, 1);
       expect(dequantized[1]).toBeCloseTo(0, 1);
       expect(dequantized[2]).toBeCloseTo(12.7, 1);
@@ -139,7 +144,7 @@ describe('EmbeddingCompressor', () => {
 
       expect(result).toHaveProperty('pca');
       expect(result).toHaveProperty('quantized');
-      
+
       expect(result.pca.compressed.length).toBeLessThanOrEqual(testEmbedding.length);
       expect(result.quantized.quantized.length).toBe(result.pca.compressed.length);
     });
@@ -147,10 +152,10 @@ describe('EmbeddingCompressor', () => {
 
   describe('buildPCABasis', () => {
     it('should build PCA basis from embeddings', () => {
-      const embeddings = [
-        new Array(384).fill(0).map((_, i) => Math.sin(i * 0.1)),
-        new Array(384).fill(0).map((_, i) => Math.cos(i * 0.1)),
-        new Array(384).fill(0).map((_, i) => Math.sin(i * 0.2)),
+      const embeddings: number[][] = [
+        Array.from({ length: 384 }, (_unused, i) => Math.sin(i * 0.1)),
+        Array.from({ length: 384 }, (_unused, i) => Math.cos(i * 0.1)),
+        Array.from({ length: 384 }, (_unused, i) => Math.sin(i * 0.2)),
       ];
 
       const basis = compressor.buildPCABasis(embeddings, 50);
@@ -161,15 +166,15 @@ describe('EmbeddingCompressor', () => {
     });
 
     it('should require at least 2 embeddings', () => {
-      const singleEmbedding = [new Array(384).fill(0)];
+      const singleEmbedding: number[][] = [Array.from({ length: 384 }, () => 0)];
       expect(() => compressor.buildPCABasis(singleEmbedding)).toThrow('Need at least 2 embeddings');
     });
 
     it('should respect max dimensions parameter', () => {
-      const embeddings = [
-        new Array(384).fill(0).map((_, i) => Math.random()),
-        new Array(384).fill(0).map((_, i) => Math.random()),
-        new Array(384).fill(0).map((_, i) => Math.random()),
+      const embeddings: number[][] = [
+        Array.from({ length: 384 }, (_unused, _i) => Math.random()),
+        Array.from({ length: 384 }, (_unused, _i) => Math.random()),
+        Array.from({ length: 384 }, (_unused, _i) => Math.random()),
       ];
 
       const basis = compressor.buildPCABasis(embeddings, 10);
@@ -210,7 +215,7 @@ describe('EmbeddingCompressor', () => {
     it('should fallback when variance threshold not met', () => {
       // Create poor basis that won't meet variance threshold
       const poorBasis = testBasis.map(row => row.map(val => val * 0.001));
-      
+
       const result = compressor.compressWithQualityControl(testEmbedding, poorBasis, 0.99, 100);
 
       // Should fallback to quantization only
@@ -220,10 +225,10 @@ describe('EmbeddingCompressor', () => {
 
   describe('batchCompress', () => {
     it('should compress multiple embeddings', () => {
-      const embeddings = [
-        new Array(384).fill(0).map((_, i) => Math.sin(i * 0.1)),
-        new Array(384).fill(0).map((_, i) => Math.cos(i * 0.1)),
-        new Array(384).fill(0).map((_, i) => Math.sin(i * 0.2)),
+      const embeddings: number[][] = [
+        Array.from({ length: 384 }, (_unused, i) => Math.sin(i * 0.1)),
+        Array.from({ length: 384 }, (_unused, i) => Math.cos(i * 0.1)),
+        Array.from({ length: 384 }, (_unused, i) => Math.sin(i * 0.2)),
       ];
 
       const results = compressor.batchCompress(embeddings, testBasis);
@@ -288,9 +293,9 @@ describe('EmbeddingCompressor', () => {
 
   describe('Performance', () => {
     it('should compress within reasonable time', () => {
-      const largeEmbedding = new Array(1024).fill(0).map((_, i) => Math.random());
-      const largeBasis = new Array(256).fill(0).map((_, i) => 
-        new Array(1024).fill(0).map((_, j) => (i === j % 256 ? 1 : 0) * 0.1)
+      const largeEmbedding: number[] = Array.from({ length: 1024 }, (_unused, _i) => Math.random());
+      const largeBasis: number[][] = Array.from({ length: 256 }, (_, i) =>
+        Array.from({ length: 1024 }, (_unused, j) => (i === j % 256 ? 1 : 0) * 0.1)
       );
 
       const startTime = Date.now();
@@ -303,7 +308,7 @@ describe('EmbeddingCompressor', () => {
 
     it('should handle batch compression efficiently', () => {
       const batchSize = 100;
-      const embeddings = Array.from({ length: batchSize }, () => 
+      const embeddings = Array.from({ length: batchSize }, () =>
         new Array(384).fill(0).map(() => Math.random())
       );
 

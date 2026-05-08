@@ -69,7 +69,7 @@ export class EmbeddingCompressor {
     // Step 2: Project onto principal components
     const nComponents = Math.min(this.maxDimensions, basis.length);
     const compressed: number[] = [];
-    
+
     // Calculate original energy (variance)
     const originalEnergy = embedding.reduce((sum, val) => sum + val * val, 0);
     let projectedEnergy = 0;
@@ -179,23 +179,26 @@ export class EmbeddingCompressor {
 
     // Center the data
     const mean = this.calculateMean(embeddings);
-    const centered = embeddings.map(e => e.map((v, i) => v - mean[i]));
+    void mean;
 
     // Compute covariance matrix (simplified - would use SVD in production)
     // For now, return identity basis (placeholder)
     // In production, implement power iteration or use numeric library
     const basis: number[][] = [];
-    
+
     // Simple heuristic: use normalized random vectors as basis
     for (let i = 0; i < Math.min(n, dims); i++) {
-      const vec = new Array(dims).fill(0).map((_, j) => 
-        (i === j ? 1 : 0) + (Math.random() - 0.5) * 0.01
-      );
+      const vec = new Array(dims)
+        .fill(0)
+        .map((_, j) => (i === j ? 1 : 0) + (Math.random() - 0.5) * 0.01);
       const normalized = this.normalize(vec);
       basis.push(normalized);
     }
 
-    logger.info('embedding-compressor', `Built PCA basis: ${basis.length} components, ${dims} dimensions`);
+    logger.info(
+      'embedding-compressor',
+      `Built PCA basis: ${basis.length} components, ${dims} dimensions`
+    );
 
     return basis;
   }
@@ -213,7 +216,11 @@ export class EmbeddingCompressor {
     const compressionRatio = originalSize / compressedSize;
 
     // Estimate error rate (reconstruction error)
-    const reconstructed = this.dequantize8Bit(quantized.quantized, quantized.scale, quantized.zeroPoint);
+    const reconstructed = this.dequantize8Bit(
+      quantized.quantized,
+      quantized.scale,
+      quantized.zeroPoint
+    );
     let errorSum = 0;
     for (let i = 0; i < original.length; i++) {
       errorSum += Math.abs(original[i] - reconstructed[i]);
@@ -221,9 +228,7 @@ export class EmbeddingCompressor {
     const errorRate = errorSum / original.length;
 
     // Calculate explained variance if PCA was used
-    const explainedVariance = compressed.length < original.length 
-      ? this.targetVariance 
-      : 1.0;
+    const explainedVariance = compressed.length < original.length ? this.targetVariance : 1.0;
 
     return {
       originalSize,
@@ -250,13 +255,13 @@ export class EmbeddingCompressor {
     // Step 1: PCA compression
     const originalDims = embedding.length;
     const targetDims = Math.min(maxDimensions, originalDims);
-    
+
     // Temporarily adjust max dimensions
     const oldMax = this.maxDimensions;
     this.maxDimensions = targetDims;
-    
+
     const pca = this.compressPCA(embedding, basis);
-    
+
     this.maxDimensions = oldMax;
 
     // Step 2: Check if we meet variance threshold
@@ -268,7 +273,7 @@ export class EmbeddingCompressor {
       // Fallback to quantization only
       const quantized = this.quantize8Bit(embedding);
       const stats = this.getCompressionStats(embedding, embedding, quantized);
-      
+
       return {
         compressed: embedding,
         quantized,
@@ -302,7 +307,11 @@ export class EmbeddingCompressor {
       try {
         return this.compressWithQualityControl(emb, basis);
       } catch (error) {
-        logger.error('embedding-compressor', `Failed to compress embedding ${index}`, error as Error);
+        logger.error(
+          'embedding-compressor',
+          `Failed to compress embedding ${index}`,
+          error as Error
+        );
         // Return uncompressed as fallback
         if (emb.length === 0) {
           // Return empty result for empty embedding
@@ -353,25 +362,28 @@ export class EmbeddingCompressor {
 
   private calculateMean(embeddings: number[][]): number[] {
     const dims = embeddings[0].length;
-    const mean = new Array(dims).fill(0);
-    
+    const mean: number[] = Array.from({ length: dims }, () => 0);
+
     for (const emb of embeddings) {
       for (let i = 0; i < dims; i++) {
         mean[i] += emb[i];
       }
     }
-    
+
     for (let i = 0; i < dims; i++) {
       mean[i] /= embeddings.length;
     }
-    
+
     return mean;
   }
 
   /**
    * Estimate memory savings for a given embedding size
    */
-  estimateSavings(originalDimensions: number, targetVariance: number = 0.95): {
+  estimateSavings(
+    originalDimensions: number,
+    targetVariance: number = 0.95
+  ): {
     originalBytes: number;
     compressedBytes: number;
     quantizedBytes: number;

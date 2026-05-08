@@ -14,7 +14,10 @@ class TestableMigrationManager extends MigrationManager {
     return super.executeMigration(migration);
   }
 
-  public override async executeMigrationWithRetry(migration: Migration, options: MigrationOptions): Promise<void> {
+  public override async executeMigrationWithRetry(
+    migration: Migration,
+    options: MigrationOptions
+  ): Promise<void> {
     return super.executeMigrationWithRetry(migration, options);
   }
 
@@ -69,7 +72,7 @@ describe('Database Migration', () => {
     const versionTracked =
       migrationRecords &&
       migrationRecords.length > 0 &&
-      migrationRecords.every((record) => record.id && record.checksum);
+      migrationRecords.every(record => record.id && record.checksum);
 
     expect(versionTracked).toBe(true);
   });
@@ -113,7 +116,7 @@ describe('Database Migration', () => {
       'pattern_implementations',
       'schema_migrations',
     ];
-    const existingTables = tables.map((row) => row.name);
+    const existingTables = tables.map(row => row.name);
     const allTablesExist = requiredTables.every(table => existingTables.includes(table));
 
     expect(allTablesExist).toBe(true);
@@ -134,7 +137,7 @@ describe('Database Migration', () => {
     expect(hasRequiredColumns).toBe(true);
   });
 
-   it('should validate migration integrity', () => {
+  it('should validate migration integrity', () => {
     // Check if all expected tables have data
     const tablesWithData = dbManager.query<TableName>(`
       SELECT name FROM sqlite_master
@@ -157,9 +160,18 @@ describe('Database Migration', () => {
 
     // Required columns that should be present
     const requiredColumns = [
-      'id', 'name', 'category', 'description',
-      'when_to_use', 'benefits', 'drawbacks', 'use_cases',
-      'complexity', 'tags', 'created_at', 'updated_at'
+      'id',
+      'name',
+      'category',
+      'description',
+      'when_to_use',
+      'benefits',
+      'drawbacks',
+      'use_cases',
+      'complexity',
+      'tags',
+      'created_at',
+      'updated_at',
     ];
 
     // Check if all required columns are present
@@ -295,7 +307,7 @@ describe('Database Migration', () => {
     expect(result).toHaveProperty('message');
   });
 
-    describe('DDL Migration Error Handling', () => {
+  describe('DDL Migration Error Handling', () => {
     let testDbManager: DatabaseManager;
     let testMigrationManager: TestableMigrationManager;
 
@@ -404,11 +416,15 @@ describe('Database Migration', () => {
 
     it('should extract created objects from DDL statements', () => {
       // Test table extraction
-      const tableObjects = testMigrationManager.extractCreatedObjects('CREATE TABLE IF NOT EXISTS test_table (id INTEGER);');
+      const tableObjects = testMigrationManager.extractCreatedObjects(
+        'CREATE TABLE IF NOT EXISTS test_table (id INTEGER);'
+      );
       expect(tableObjects).toEqual(['test_table']);
 
       // Test index extraction
-      const indexObjects = testMigrationManager.extractCreatedObjects('CREATE INDEX idx_test_table_name ON test_table(name);');
+      const indexObjects = testMigrationManager.extractCreatedObjects(
+        'CREATE INDEX idx_test_table_name ON test_table(name);'
+      );
       expect(indexObjects).toEqual(['idx_test_table_name']);
 
       // Test unique index extraction
@@ -418,7 +434,7 @@ describe('Database Migration', () => {
       expect(uniqueIndexObjects).toEqual(['idx_unique_test']);
     });
 
-    it('should check if database objects exist', async () => {
+    it('should check if database objects exist', () => {
       // Create a test table
       testDbManager.execDDL('CREATE TABLE test_existence_table (id INTEGER PRIMARY KEY);');
 
@@ -445,35 +461,38 @@ describe('Database Migration', () => {
 
       // Mock the executeMigration to fail twice then succeed
       // Since we are using a subclass, we can spy on the method directly
-      const spy = vi.spyOn(testMigrationManager, 'executeMigration').mockImplementation(async (migration: Migration) => {
-        attemptCount++;
-        if (attemptCount < 3) {
-           // Create partial state then fail (to simulate failure during execution)
-           // In a real scenario, this would be an error during DB execution
-           testDbManager.execDDL(
+      const spy = vi
+        .spyOn(testMigrationManager, 'executeMigration')
+        .mockImplementation((migration: Migration) => {
+          attemptCount++;
+          if (attemptCount < 3) {
+            // Create partial state then fail (to simulate failure during execution)
+            // In a real scenario, this would be an error during DB execution
+            testDbManager.execDDL(
               `CREATE TABLE IF NOT EXISTS retry_test_table_${uniqueId} (id INTEGER PRIMARY KEY);`
             );
-           throw new Error('Simulated failure');
-        }
+            return Promise.reject(new Error('Simulated failure'));
+          }
 
-        // On third attempt, we perform the actual success logic
-        // We need to call the REAL super method.
-        // But vi.spyOn mocks it.
-        // We can use mockRestore inside, or use .mockImplementation calls.
-        // Actually, since we are inside the mock, we can't easily call "super".
-        // Instead, let's look at how the original test was doing it.
-        // The original test was hacking Object.defineProperty.
+          // On third attempt, we perform the actual success logic
+          // We need to call the REAL super method.
+          // But vi.spyOn mocks it.
+          // We can use mockRestore inside, or use .mockImplementation calls.
+          // Actually, since we are inside the mock, we can't easily call "super".
+          // Instead, let's look at how the original test was doing it.
+          // The original test was hacking Object.defineProperty.
 
-        // Alternative: Don't spy. Just override the method on the instance, which is now public/writable effectively via the subclass if we wanted to,
-        // OR simply use the fact that we can access it.
+          // Alternative: Don't spy. Just override the method on the instance, which is now public/writable effectively via the subclass if we wanted to,
+          // OR simply use the fact that we can access it.
 
-        // Let's rely on the original logic but adapted for the subclass.
-        // But wait, the original logic used Object.defineProperty because it was a method on the instance.
-        // We can do the same here, or better yet, since it's a test class, we can just assign to it if it's writable, or use vi.spyOn properly.
+          // Let's rely on the original logic but adapted for the subclass.
+          // But wait, the original logic used Object.defineProperty because it was a method on the instance.
+          // We can do the same here, or better yet, since it's a test class, we can just assign to it if it's writable, or use vi.spyOn properly.
 
-        // Let's implement the "success" part by actually running the DDL:
-         testDbManager.execDDL(migration.up);
-      });
+          // Let's implement the "success" part by actually running the DDL:
+          testDbManager.execDDL(migration.up);
+          return Promise.resolve();
+        });
 
       // Wait, executeMigration is what calls DDL.
       // If we mock it, we replace it.

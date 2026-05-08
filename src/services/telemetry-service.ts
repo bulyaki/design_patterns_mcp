@@ -11,7 +11,7 @@ import { EventEmitter } from 'events';
 /**
  * Telemetry event types
  */
-export type TelemetryEventType = 
+export type TelemetryEventType =
   | 'search_start'
   | 'search_complete'
   | 'search_error'
@@ -140,7 +140,7 @@ export class TelemetryService extends EventEmitter {
    */
   recordEvent(event: TelemetryEvent): void {
     if (!this.config.enabled) return;
-    
+
     // Sampling
     if (Math.random() > this.config.sampleRate) return;
 
@@ -175,7 +175,7 @@ export class TelemetryService extends EventEmitter {
    */
   recordSearchMetrics(metrics: SearchMetrics): void {
     this.metricsBuffer.push(metrics);
-    
+
     this.recordEvent({
       type: 'search_complete',
       timestamp: new Date(),
@@ -192,7 +192,7 @@ export class TelemetryService extends EventEmitter {
    */
   recordTrace(trace: SearchTrace): void {
     if (!this.config.logTraces) return;
-    
+
     this.recordEvent({
       type: 'search_complete',
       timestamp: new Date(),
@@ -206,7 +206,7 @@ export class TelemetryService extends EventEmitter {
    */
   recordEvaluation(evaluation: EvaluationResult): void {
     if (!this.config.logEvaluations) return;
-    
+
     this.recordEvent({
       type: 'evaluation_complete',
       timestamp: new Date(),
@@ -277,12 +277,14 @@ export class TelemetryService extends EventEmitter {
     groundTruth?: string[] // Expected pattern IDs
   ): EvaluationResult {
     const k = Math.min(10, recommendations.length);
-    
+
     // Precision@K
     const precisionAtK: number[] = [];
     for (let i = 1; i <= k; i++) {
       if (groundTruth) {
-        const hits = recommendations.slice(0, i).filter(r => groundTruth.includes(r.patternId)).length;
+        const hits = recommendations
+          .slice(0, i)
+          .filter(r => groundTruth.includes(r.patternId)).length;
         precisionAtK.push(hits / i);
       } else {
         // Use score-based heuristic
@@ -294,7 +296,9 @@ export class TelemetryService extends EventEmitter {
     const recallAtK: number[] = [];
     if (groundTruth) {
       for (let i = 1; i <= k; i++) {
-        const hits = recommendations.slice(0, i).filter(r => groundTruth.includes(r.patternId)).length;
+        const hits = recommendations
+          .slice(0, i)
+          .filter(r => groundTruth.includes(r.patternId)).length;
         recallAtK.push(hits / groundTruth.length);
       }
     }
@@ -304,23 +308,21 @@ export class TelemetryService extends EventEmitter {
     for (let i = 1; i <= k; i++) {
       let dcg = 0;
       let idcg = 0;
-      
+
       for (let j = 0; j < i; j++) {
-        const relevance = groundTruth?.includes(recommendations[j].patternId) ? 1 : recommendations[j].score;
+        const relevance = groundTruth?.includes(recommendations[j].patternId)
+          ? 1
+          : recommendations[j].score;
         dcg += relevance / Math.log2(j + 2);
         idcg += 1 / Math.log2(j + 2); // Perfect ranking
       }
-      
+
       ndcgAtK.push(idcg > 0 ? dcg / idcg : 0);
     }
 
     // Diversity score (unique categories)
-    const categories = new Set<string>();
     // Would need to fetch categories from database
     const diversityScore = 0.5; // Placeholder
-
-    // Semantic coverage
-    const semanticCoverage = recommendations.reduce((sum, r) => sum + r.score, 0) / recommendations.length;
 
     const metrics: EvaluationMetrics = {
       precisionAtK: precisionAtK[precisionAtK.length - 1] ?? 0,
@@ -358,7 +360,10 @@ export class TelemetryService extends EventEmitter {
     if (!this.performanceAggregates.has(key)) {
       this.performanceAggregates.set(key, []);
     }
-    this.performanceAggregates.get(key)!.push(metrics.durationMs);
+    const strategyMetrics = this.performanceAggregates.get(key);
+    if (strategyMetrics) {
+      strategyMetrics.push(metrics.durationMs);
+    }
 
     // Track by query type (extract from context)
     const queryType = this.inferQueryType(metrics.query);
@@ -366,7 +371,10 @@ export class TelemetryService extends EventEmitter {
     if (!this.performanceAggregates.has(typeKey)) {
       this.performanceAggregates.set(typeKey, []);
     }
-    this.performanceAggregates.get(typeKey)!.push(metrics.durationMs);
+    const queryTypeMetrics = this.performanceAggregates.get(typeKey);
+    if (queryTypeMetrics) {
+      queryTypeMetrics.push(metrics.durationMs);
+    }
 
     // Track quality metrics
     const qualityKey = `quality_${metrics.strategy}`;
@@ -380,10 +388,12 @@ export class TelemetryService extends EventEmitter {
       });
     }
 
-    const quality = this.qualityAggregates.get(qualityKey)!;
-    quality.semanticCoverage = (quality.semanticCoverage + (metrics.avgRelevance ?? 0)) / 2;
-    if (metrics.diversityScore !== undefined) {
-      quality.diversityScore = (quality.diversityScore + metrics.diversityScore) / 2;
+    const quality = this.qualityAggregates.get(qualityKey);
+    if (quality) {
+      quality.semanticCoverage = (quality.semanticCoverage + (metrics.avgRelevance ?? 0)) / 2;
+      if (metrics.diversityScore !== undefined) {
+        quality.diversityScore = (quality.diversityScore + metrics.diversityScore) / 2;
+      }
     }
 
     // Track usage patterns
@@ -397,7 +407,8 @@ export class TelemetryService extends EventEmitter {
   private inferQueryType(query: string): string {
     const words = query.split(/\s+/);
     if (words.length <= 3) return 'specific';
-    if (query.includes('how') || query.includes('what') || query.includes('explain')) return 'exploratory';
+    if (query.includes('how') || query.includes('what') || query.includes('explain'))
+      return 'exploratory';
     return 'balanced';
   }
 
@@ -420,8 +431,10 @@ export class TelemetryService extends EventEmitter {
   } {
     const performance = this.getPerformancePercentiles();
     const quality = this.getQualityMetrics();
-    const usageEntries = Array.from(this.usagePatterns.entries()).sort((a, b) => b[1] - a[1]).slice(0, 20);
-    const usage = new Map(usageEntries as [string, number][]);
+    const usageEntries = Array.from(this.usagePatterns.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20);
+    const usage = new Map(usageEntries);
 
     const totalSearches = this.metricsBuffer.length;
     const avgDuration = performance.get('search_hybrid')?.mean ?? 0;
@@ -451,21 +464,21 @@ export class TelemetryService extends EventEmitter {
     errorRate: number;
     cacheHitRate: number;
   } {
-    const recentMetrics = this.metricsBuffer.filter(m => 
-      Date.now() - m.timestamp.getTime() < 3600000 // Last hour
+    const recentMetrics = this.metricsBuffer.filter(
+      m => Date.now() - m.timestamp.getTime() < 3600000 // Last hour
     );
 
     const searchRate = recentMetrics.length / 3600; // per second
-    const avgLatency = recentMetrics.reduce((sum, m) => sum + m.durationMs, 0) / (recentMetrics.length || 1);
-    
+    const avgLatency =
+      recentMetrics.reduce((sum, m) => sum + m.durationMs, 0) / (recentMetrics.length || 1);
+
     const errors = this.events.filter(e => e.type === 'search_error').length;
     const total = this.events.filter(e => e.type === 'search_complete').length || 1;
     const errorRate = errors / total;
 
     const cacheHits = this.events.filter(e => e.type === 'cache_hit').length;
-    const cacheLooks = this.events.filter(e => 
-      e.type === 'cache_hit' || e.type === 'cache_miss'
-    ).length || 1;
+    const cacheLooks =
+      this.events.filter(e => e.type === 'cache_hit' || e.type === 'cache_miss').length || 1;
     const cacheHitRate = cacheHits / cacheLooks;
 
     return {
@@ -498,7 +511,7 @@ export class TelemetryService extends EventEmitter {
 
     // In production, this would write to database or file
     // For now, log aggregated stats
-    
+
     const report = this.generateReport();
     logger.info('telemetry', 'Periodic telemetry flush', {
       eventsFlushed: this.events.length,
@@ -507,7 +520,7 @@ export class TelemetryService extends EventEmitter {
     });
 
     // Clear old events based on retention
-    const cutoff = Date.now() - (this.config.retentionHours * 3600000);
+    const cutoff = Date.now() - this.config.retentionHours * 3600000;
     this.events = this.events.filter(e => e.timestamp.getTime() >= cutoff);
     this.metricsBuffer = this.metricsBuffer.filter(m => m.timestamp.getTime() >= cutoff);
     this.tracesBuffer = this.tracesBuffer.filter(t => {
@@ -525,16 +538,27 @@ export class TelemetryService extends EventEmitter {
       /**
        * Format compliance evaluator
        */
-      formatCompliance: (result: any): boolean => {
-        return result && Array.isArray(result) && result.every(r => 
-          typeof r.patternId === 'string' && typeof r.score === 'number'
+      formatCompliance: (result: unknown): boolean => {
+        return (
+          Array.isArray(result) &&
+          result.every(item => {
+            if (typeof item !== 'object' || item === null) {
+              return false;
+            }
+
+            const candidate = item as { patternId?: unknown; score?: unknown };
+            return typeof candidate.patternId === 'string' && typeof candidate.score === 'number';
+          })
         );
       },
 
       /**
        * Semantic correctness evaluator
        */
-      semanticCorrectness: (query: string, results: Array<{ patternId: string; score: number }>): number => {
+      semanticCorrectness: (
+        query: string,
+        results: Array<{ patternId: string; score: number }>
+      ): number => {
         // Check if top results are semantically related to query
         // This would use embedding similarity in production
         const score = results.slice(0, 3).reduce((sum, r) => sum + r.score, 0) / 3;

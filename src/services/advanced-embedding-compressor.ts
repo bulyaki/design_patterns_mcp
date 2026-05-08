@@ -22,13 +22,13 @@ export enum CompressionTechnique {
  * Compression configuration
  */
 export interface AdvancedCompressionConfig {
-  targetVariance: number;           // PCA variance to retain (0.0-1.0)
-  maxDimensions: number;            // Maximum dimensions after compression
-  quantizationBits: 4 | 8 | 16;     // Quantization bit depth
+  targetVariance: number; // PCA variance to retain (0.0-1.0)
+  maxDimensions: number; // Maximum dimensions after compression
+  quantizationBits: 4 | 8 | 16; // Quantization bit depth
   useKnowledgeDistillation: boolean; // Use KD for better accuracy
   productQuantizationClusters: number; // Number of PQ clusters
-  adaptiveThreshold: number;        // Adaptive compression threshold
-  minAccuracyDrop: number;          // Maximum allowed accuracy drop
+  adaptiveThreshold: number; // Adaptive compression threshold
+  minAccuracyDrop: number; // Maximum allowed accuracy drop
 }
 
 /**
@@ -43,16 +43,16 @@ export interface AdvancedCompressionResult {
     compressionRatio: number;
     explainedVariance: number;
     reconstructionError: number;
-    accuracyDrop: number;           // Estimated accuracy drop
-    memorySavings: number;          // Percentage memory saved
-    inferenceSpeedup: number;       // Estimated speedup factor
+    accuracyDrop: number; // Estimated accuracy drop
+    memorySavings: number; // Percentage memory saved
+    inferenceSpeedup: number; // Estimated speedup factor
   };
   metadata: {
     quantizationScale?: number;
     quantizationZeroPoint?: number;
     pcaBasis?: number[][];
     productQuantizationCodebooks?: number[][][];
-    distillationTeacher?: string;   // Teacher model identifier
+    distillationTeacher?: string; // Teacher model identifier
   };
 }
 
@@ -66,7 +66,7 @@ class KnowledgeDistillationTrainer {
   /**
    * Train student to mimic teacher embeddings
    */
-  async trainDistillation(
+  trainDistillation(
     teacherEmbeddings: Map<string, number[]>,
     studentDimensions: number,
     epochs: number = 10
@@ -91,16 +91,13 @@ class KnowledgeDistillationTrainer {
       studentSamples: studentEmbeddings.size,
     });
 
-    return studentEmbeddings;
+    return Promise.resolve(studentEmbeddings);
   }
 
   /**
    * Calculate distillation loss
    */
-  calculateDistillationLoss(
-    teacherEmbedding: number[],
-    studentEmbedding: number[]
-  ): number {
+  calculateDistillationLoss(teacherEmbedding: number[], studentEmbedding: number[]): number {
     // Mean Squared Error loss
     let loss = 0;
     for (let i = 0; i < teacherEmbedding.length; i++) {
@@ -114,7 +111,7 @@ class KnowledgeDistillationTrainer {
    * Random projection for dimensionality reduction
    */
   private randomProjection(embedding: number[], targetDim: number): number[] {
-    const result = new Array(targetDim).fill(0);
+    const result: number[] = Array.from({ length: targetDim }, () => 0);
     const scale = Math.sqrt(embedding.length / targetDim);
 
     for (let i = 0; i < targetDim; i++) {
@@ -149,14 +146,14 @@ class ProductQuantizer {
   trainCodebooks(embeddings: number[][]): number[][][] {
     const dims = embeddings[0].length;
     const subvectorDim = Math.floor(dims / this.numSubvectors);
-    
+
     const codebooks: number[][][] = [];
-    
+
     for (let s = 0; s < this.numSubvectors; s++) {
       const start = s * subvectorDim;
       const end = Math.min(start + subvectorDim, dims);
       const subvectors = embeddings.map(e => e.slice(start, end));
-      
+
       // Simple k-means clustering (would use proper k-means in production)
       const centroids = this.simpleKMeans(subvectors, this.numClusters);
       codebooks.push(centroids);
@@ -174,7 +171,10 @@ class ProductQuantizer {
   /**
    * Quantize embedding using PQ
    */
-  quantize(embedding: number[], codebooks: number[][][]): {
+  quantize(
+    embedding: number[],
+    codebooks: number[][][]
+  ): {
     codes: number[];
     reconstructed: number[];
   } {
@@ -228,8 +228,10 @@ class ProductQuantizer {
 
     for (let iter = 0; iter < maxIterations; iter++) {
       // Assign clusters
-      const clusters: number[][][] = Array(k).fill(null).map(() => []);
-      
+      const clusters: number[][][] = Array(k)
+        .fill(null)
+        .map(() => []);
+
       for (const vector of vectors) {
         let bestCluster = 0;
         let bestDist = Infinity;
@@ -250,22 +252,22 @@ class ProductQuantizer {
       for (let i = 0; i < k; i++) {
         if (clusters[i].length > 0) {
           const dims = clusters[i][0].length;
-          const mean = new Array(dims).fill(0);
-          
+          const mean: number[] = Array.from({ length: dims }, () => 0);
+
           for (const vector of clusters[i]) {
             for (let d = 0; d < dims; d++) {
               mean[d] += vector[d];
             }
           }
-          
+
           for (let d = 0; d < dims; d++) {
             mean[d] /= clusters[i].length;
           }
-          
+
           newCentroids.push(mean);
         } else {
           // Keep old centroid if cluster is empty
-          newCentroids.push(centroids[i]);
+          newCentroids.push(centroids[i] ?? []);
         }
       }
 
@@ -364,7 +366,7 @@ class AdaptiveCompressionSelector {
     if (sum === 0) return 0;
 
     const probabilities = absValues.map(v => v / sum);
-    
+
     // Calculate Shannon entropy
     let entropy = 0;
     for (const p of probabilities) {
@@ -418,7 +420,7 @@ export class AdvancedEmbeddingCompressor {
     const originalSize = embedding.length * 4; // float32
 
     // Analyze embedding if technique not specified
-    const selectedTechnique = technique || this.selectCompressionTechnique(embedding);
+    const selectedTechnique = technique ?? this.selectCompressionTechnique(embedding);
 
     let compressed: number[] | Int8Array | Uint8Array | Int16Array;
     let metadata: AdvancedCompressionResult['metadata'] = {};
@@ -434,7 +436,11 @@ export class AdvancedEmbeddingCompressor {
         const quantResult = this.quantize(embedding, 8);
         compressed = quantResult.compressed;
         reconstructionError = quantResult.reconstructionError;
-        metadata = { ...metadata, quantizationScale: quantResult.quantizationScale, quantizationZeroPoint: quantResult.quantizationZeroPoint };
+        metadata = {
+          ...metadata,
+          quantizationScale: quantResult.quantizationScale,
+          quantizationZeroPoint: quantResult.quantizationZeroPoint,
+        };
         break;
       }
 
@@ -442,7 +448,11 @@ export class AdvancedEmbeddingCompressor {
         const quantResult = this.quantize(embedding, 4);
         compressed = quantResult.compressed;
         reconstructionError = quantResult.reconstructionError;
-        metadata = { ...metadata, quantizationScale: quantResult.quantizationScale, quantizationZeroPoint: quantResult.quantizationZeroPoint };
+        metadata = {
+          ...metadata,
+          quantizationScale: quantResult.quantizationScale,
+          quantizationZeroPoint: quantResult.quantizationZeroPoint,
+        };
         break;
       }
 
@@ -455,7 +465,10 @@ export class AdvancedEmbeddingCompressor {
         const pqResult = await this.compressWithPQ([embedding]);
         compressed = pqResult.compressed;
         reconstructionError = pqResult.reconstructionError;
-        metadata = { ...metadata, productQuantizationCodebooks: pqResult.productQuantizationCodebooks };
+        metadata = {
+          ...metadata,
+          productQuantizationCodebooks: pqResult.productQuantizationCodebooks,
+        };
         break;
       }
 
@@ -463,16 +476,14 @@ export class AdvancedEmbeddingCompressor {
         return this.compressAdaptive(embedding);
 
       default:
-        throw new Error(`Unknown compression technique: ${selectedTechnique}`);
+        throw new Error(`Unknown compression technique: ${String(selectedTechnique)}`);
     }
 
     const compressedSize = this.calculateSize(compressed);
-    const compressionRatio = originalSize > 0 && compressedSize > 0 
-      ? originalSize / compressedSize 
-      : 1;
-    const memorySavings = originalSize > 0 
-      ? ((originalSize - compressedSize) / originalSize) * 100 
-      : 0;
+    const compressionRatio =
+      originalSize > 0 && compressedSize > 0 ? originalSize / compressedSize : 1;
+    const memorySavings =
+      originalSize > 0 ? ((originalSize - compressedSize) / originalSize) * 100 : 0;
 
     // Estimate accuracy drop (simplified model)
     const accuracyDrop = this.estimateAccuracyDrop(
@@ -525,7 +536,11 @@ export class AdvancedEmbeddingCompressor {
         const result = await this.compress(embeddings[i], technique);
         results.push(result);
       } catch (error) {
-        logger.error('advanced-embedding-compressor', `Failed to compress embedding ${i}`, error as Error);
+        logger.error(
+          'advanced-embedding-compressor',
+          `Failed to compress embedding ${i}`,
+          error as Error
+        );
         // Fallback to original
         results.push(this.createFallbackResult(embeddings[i]));
       }
@@ -539,7 +554,7 @@ export class AdvancedEmbeddingCompressor {
    */
   private async compressAdaptive(embedding: number[]): Promise<AdvancedCompressionResult> {
     const analysis = this.adaptiveSelector.analyzeEmbedding(embedding);
-    
+
     logger.debug('advanced-embedding-compressor', 'Adaptive compression analysis', {
       recommendedTechnique: analysis.recommendedTechnique,
       confidence: analysis.confidence,
@@ -549,16 +564,20 @@ export class AdvancedEmbeddingCompressor {
     // Try recommended technique first
     try {
       const result = await this.compress(embedding, analysis.recommendedTechnique);
-      
+
       // Check if accuracy drop is acceptable
       if (result.stats.accuracyDrop <= this.config.minAccuracyDrop) {
         return result;
       }
     } catch (error) {
-      logger.warn('advanced-embedding-compressor', 'Recommended technique failed, trying alternatives', {
-        technique: analysis.recommendedTechnique,
-        error: (error as Error).message,
-      });
+      logger.warn(
+        'advanced-embedding-compressor',
+        'Recommended technique failed, trying alternatives',
+        {
+          technique: analysis.recommendedTechnique,
+          error: (error as Error).message,
+        }
+      );
     }
 
     // Try alternative techniques in order of preference
@@ -588,7 +607,7 @@ export class AdvancedEmbeddingCompressor {
    */
   private selectCompressionTechnique(embedding: number[]): CompressionTechnique {
     const analysis = this.adaptiveSelector.analyzeEmbedding(embedding);
-    
+
     if (analysis.confidence >= this.config.adaptiveThreshold) {
       return analysis.recommendedTechnique;
     }
@@ -607,9 +626,12 @@ export class AdvancedEmbeddingCompressor {
   } {
     // Simplified PCA implementation
     // In production, would use proper SVD
-    const targetDims = Math.min(this.config.maxDimensions, Math.floor(embedding.length * this.config.targetVariance));
+    const targetDims = Math.min(
+      this.config.maxDimensions,
+      Math.floor(embedding.length * this.config.targetVariance)
+    );
     const compressed = embedding.slice(0, targetDims);
-    
+
     const explainedVariance = targetDims / embedding.length;
     const reconstructionError = this.calculateReconstructionError(embedding, compressed);
 
@@ -623,7 +645,10 @@ export class AdvancedEmbeddingCompressor {
   /**
    * Quantization
    */
-  private quantize(embedding: number[], bits: 4 | 8 | 16): {
+  private quantize(
+    embedding: number[],
+    bits: 4 | 8 | 16
+  ): {
     compressed: Int8Array | Uint8Array | Int16Array;
     reconstructionError: number;
     quantizationScale: number;
@@ -644,11 +669,12 @@ export class AdvancedEmbeddingCompressor {
     const zeroPoint = Math.round(qmin - min / scale);
 
     // Quantize
-    const quantized = bits === 4 
-      ? new Int8Array(embedding.length) // Will store 4-bit packed
-      : bits === 8 
-        ? new Int8Array(embedding.length)
-        : new Int16Array(embedding.length);
+    const quantized =
+      bits === 4
+        ? new Int8Array(embedding.length) // Will store 4-bit packed
+        : bits === 8
+          ? new Int8Array(embedding.length)
+          : new Int16Array(embedding.length);
 
     for (let i = 0; i < embedding.length; i++) {
       const clamped = Math.max(qmin, Math.min(qmax, Math.round(embedding[i] / scale + zeroPoint)));
@@ -685,30 +711,30 @@ export class AdvancedEmbeddingCompressor {
       this.config.maxDimensions
     );
 
-    return studentEmbeddings.get('current') || embedding.slice(0, this.config.maxDimensions);
+    return studentEmbeddings.get('current') ?? embedding.slice(0, this.config.maxDimensions);
   }
 
   /**
    * Product Quantization compression
    */
-  private async compressWithPQ(embeddings: number[][]): Promise<{
+  private compressWithPQ(embeddings: number[][]): Promise<{
     compressed: number[];
     reconstructionError: number;
     productQuantizationCodebooks: number[][][];
   }> {
     // Train codebooks on the embeddings
     const codebooks = this.productQuantizer.trainCodebooks(embeddings);
-    
+
     // Quantize first embedding (for single embedding compression)
     const { reconstructed } = this.productQuantizer.quantize(embeddings[0], codebooks);
-    
+
     const reconstructionError = this.calculateReconstructionError(embeddings[0], reconstructed);
 
-    return {
+    return Promise.resolve({
       compressed: reconstructed,
       reconstructionError,
       productQuantizationCodebooks: codebooks,
-    };
+    });
   }
 
   /**
@@ -717,11 +743,11 @@ export class AdvancedEmbeddingCompressor {
   private calculateReconstructionError(original: number[], reconstructed: number[]): number {
     let error = 0;
     const minLength = Math.min(original.length, reconstructed.length);
-    
+
     for (let i = 0; i < minLength; i++) {
       error += Math.abs(original[i] - reconstructed[i]);
     }
-    
+
     return error / minLength;
   }
 
@@ -740,7 +766,7 @@ export class AdvancedEmbeddingCompressor {
     quantized: Int8Array | Uint8Array | Int16Array,
     scale: number,
     zeroPoint: number,
-    bits: number
+    _bits: number
   ): number[] {
     const result: number[] = [];
     for (let i = 0; i < quantized.length; i++) {
@@ -756,7 +782,7 @@ export class AdvancedEmbeddingCompressor {
   ): number {
     // Simplified model for accuracy drop estimation
     let baseDrop = reconstructionError * 10; // Scale error
-    
+
     // Technique-specific adjustments
     switch (technique) {
       case CompressionTechnique.KNOWLEDGE_DISTILLATION:
@@ -785,7 +811,7 @@ export class AdvancedEmbeddingCompressor {
 
   private createFallbackResult(embedding: number[]): AdvancedCompressionResult {
     const originalSize = embedding.length * 4;
-    
+
     return {
       compressed: embedding,
       technique: CompressionTechnique.QUANTIZATION_8BIT,

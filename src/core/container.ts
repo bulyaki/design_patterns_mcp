@@ -3,8 +3,7 @@
  * Provides inversion of control for better testability and maintainability
  */
 
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { resolvePatternsPath } from './path-resolver.js';
 import { DatabaseManager } from '../services/database-manager.js';
 import { VectorOperationsService } from '../services/vector-operations.js';
 import { SemanticSearchService } from '../services/semantic-search.js';
@@ -19,13 +18,17 @@ import { HealthCheckService } from '../health/health-check-service.js';
 import { DatabaseHealthCheck } from '../health/database-health-check.js';
 import { VectorOperationsHealthCheck } from '../health/vector-operations-health-check.js';
 import { LLMBridgeHealthCheck } from '../health/llm-bridge-health-check.js';
+import { HealthStatus, type HealthCheck, type HealthCheckResult } from '../health/types.js';
 import { CacheService } from '../services/cache.js';
 import type { MCPServerConfig } from '../mcp-server.js';
 
 // New services for Blended RAG
 import { HybridSearchEngine } from '../services/hybrid-search-engine.js';
 import { EmbeddingCompressor } from '../services/embedding-compressor.js';
-import { AdvancedEmbeddingCompressor, createAdvancedEmbeddingCompressor } from '../services/advanced-embedding-compressor.js';
+import {
+  AdvancedEmbeddingCompressor,
+  createAdvancedEmbeddingCompressor,
+} from '../services/advanced-embedding-compressor.js';
 import { TelemetryService } from '../services/telemetry-service.js';
 import { GraphVectorService } from '../services/graph-vector-service.js';
 import { SearchMediator } from '../handlers/search-mediator.js';
@@ -35,7 +38,7 @@ import { KeywordSearchHandler } from '../handlers/keyword-search-handler.js';
 import { RecommendationBuilder } from '../handlers/recommendation-builder.js';
 import { FuzzyInferenceEngine } from '../services/fuzzy-inference.js';
 import { FuzzyDefuzzificationEngine } from '../services/fuzzy-defuzzification.js';
-import { MultiLevelCache, createMultiLevelCache, CacheServiceInterface } from '../services/multi-level-cache.js';
+import { createMultiLevelCache } from '../services/multi-level-cache.js';
 
 export const TOKENS = {
   // Database
@@ -96,7 +99,7 @@ export const TOKENS = {
   CONFIG: Symbol('MCPServerConfig'),
 } as const;
 
-export type TokenType = typeof TOKENS[keyof typeof TOKENS];
+export type TokenType = (typeof TOKENS)[keyof typeof TOKENS];
 
 interface ServiceFactory<T = unknown> {
   (): T;
@@ -209,9 +212,10 @@ export function configureContainer(config: MCPServerConfig): SimpleContainer {
     return new DatabaseManager({
       filename: config.databasePath,
       options: {
-        verbose: config.logLevel === 'debug'
-          ? (message: string) => logger.debug('database', message)
-          : undefined,
+        verbose:
+          config.logLevel === 'debug'
+            ? (message: string) => logger.debug('database', message)
+            : undefined,
       },
     });
   });
@@ -219,21 +223,27 @@ export function configureContainer(config: MCPServerConfig): SimpleContainer {
   // Register vector operations service
   container.registerSingleton(TOKENS.VECTOR_OPERATIONS, () => {
     const db = container.getService<DatabaseManager>(TOKENS.DATABASE_MANAGER);
-    const compressor = container.getService<AdvancedEmbeddingCompressor | EmbeddingCompressor>(TOKENS.EMBEDDING_COMPRESSOR);
-    return new VectorOperationsService(db, {
-      model: 'all-MiniLM-L6-v2',
-      dimensions: 384,
-      similarityThreshold: 0.3,
-      maxResults: 10,
-      cacheEnabled: true,
-      enableCompression: true,
-      compressionConfig: {
-        targetVariance: 0.95,
-        maxDimensions: 128,
-        quantizationBits: 8,
-        minAccuracyDrop: 0.05,
+    const compressor = container.getService<AdvancedEmbeddingCompressor | EmbeddingCompressor>(
+      TOKENS.EMBEDDING_COMPRESSOR
+    );
+    return new VectorOperationsService(
+      db,
+      {
+        model: 'all-MiniLM-L6-v2',
+        dimensions: 384,
+        similarityThreshold: 0.3,
+        maxResults: 10,
+        cacheEnabled: true,
+        enableCompression: true,
+        compressionConfig: {
+          targetVariance: 0.95,
+          maxDimensions: 128,
+          quantizationBits: 8,
+          minAccuracyDrop: 0.05,
+        },
       },
-    }, compressor);
+      compressor
+    );
   });
 
   // Register semantic search service
@@ -290,14 +300,7 @@ export function configureContainer(config: MCPServerConfig): SimpleContainer {
   container.registerSingleton(TOKENS.PATTERN_SEEDER, () => {
     const db = container.getService<DatabaseManager>(TOKENS.DATABASE_MANAGER);
 
-    // Get patterns path
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
-    const isCompiled = __dirname.includes('dist');
-    const projectRoot = isCompiled
-      ? path.resolve(__dirname, '..', '..')
-      : path.resolve(__dirname, '..');
-    const patternsPath = path.join(projectRoot, 'data', 'patterns');
+    const patternsPath = resolvePatternsPath(import.meta.url);
 
     return new PatternSeeder(db, {
       patternsPath,
@@ -320,7 +323,14 @@ export function configureContainer(config: MCPServerConfig): SimpleContainer {
   container.registerSingleton(TOKENS.LOGGER, () => {
     const strategy = new ConsoleLoggingStrategy();
     return createLoggerWithStrategy(strategy, {
-      level: config.logLevel === 'debug' ? 0 : config.logLevel === 'info' ? 1 : config.logLevel === 'warn' ? 2 : 3,
+      level:
+        config.logLevel === 'debug'
+          ? 0
+          : config.logLevel === 'info'
+            ? 1
+            : config.logLevel === 'warn'
+              ? 2
+              : 3,
       format: 'text',
       enableConsole: true,
       enableFile: false,
@@ -377,13 +387,18 @@ export function configureContainer(config: MCPServerConfig): SimpleContainer {
     const vectorOps = container.getService<VectorOperationsService>(TOKENS.VECTOR_OPERATIONS);
     const db = container.getService<DatabaseManager>(TOKENS.DATABASE_MANAGER);
     const telemetry = container.getService<TelemetryService>(TOKENS.TELEMTRY_SERVICE);
-    return new GraphVectorService(vectorOps, db, {
-      k: 10,
-      maxHops: 2,
-      edgeWeightThreshold: 0.2,
-      useMetadataEdges: true,
-      rebuildInterval: 3600000,
-    }, telemetry);
+    return new GraphVectorService(
+      vectorOps,
+      db,
+      {
+        k: 10,
+        maxHops: 2,
+        edgeWeightThreshold: 0.2,
+        useMetadataEdges: true,
+        rebuildInterval: 3600000,
+      },
+      telemetry
+    );
   });
 
   // Hybrid Search Engine
@@ -392,14 +407,20 @@ export function configureContainer(config: MCPServerConfig): SimpleContainer {
     const db = container.getService<DatabaseManager>(TOKENS.DATABASE_MANAGER);
     const cache = container.getService<CacheService>(TOKENS.CACHE_SERVICE);
     const telemetry = container.getService<TelemetryService>(TOKENS.TELEMTRY_SERVICE);
-    return new HybridSearchEngine(vectorOps, db, cache, {
-      denseWeight: 0.6,
-      sparseWeight: 0.4,
-      boostExactMatches: true,
-      minDiversityScore: 0.15,
-      maxResults: 10,
-      similarityThreshold: 0.3,
-    }, telemetry);
+    return new HybridSearchEngine(
+      vectorOps,
+      db,
+      cache,
+      {
+        denseWeight: 0.6,
+        sparseWeight: 0.4,
+        boostExactMatches: true,
+        minDiversityScore: 0.15,
+        maxResults: 10,
+        similarityThreshold: 0.3,
+      },
+      telemetry
+    );
   });
 
   // Search Handlers
@@ -468,9 +489,10 @@ export function configureContainer(config: MCPServerConfig): SimpleContainer {
   });
 
   container.registerSingleton(TOKENS.LLM_BRIDGE_HEALTH_CHECK, () => {
-    const llmBridge = config.enableLLM && container.has(TOKENS.LLM_BRIDGE)
-      ? container.getService<LLMBridgeService>(TOKENS.LLM_BRIDGE)
-      : null;
+    const llmBridge =
+      config.enableLLM && container.has(TOKENS.LLM_BRIDGE)
+        ? container.getService<LLMBridgeService>(TOKENS.LLM_BRIDGE)
+        : null;
     return new LLMBridgeHealthCheck(llmBridge);
   });
 
@@ -478,37 +500,36 @@ export function configureContainer(config: MCPServerConfig): SimpleContainer {
   container.registerSingleton(TOKENS.HYBRID_SEARCH_HEALTH_CHECK, () => {
     const hybridEngine = container.getService<HybridSearchEngine>(TOKENS.HYBRID_SEARCH_ENGINE);
     const telemetry = container.getService<TelemetryService>(TOKENS.TELEMTRY_SERVICE);
-    
-    // Simple health check for hybrid search
-    return {
+
+    const hybridSearchHealthCheck: HealthCheck = {
       name: 'HybridSearch',
       tags: ['search', 'hybrid', 'critical'],
-      check: async () => {
+      check: (): Promise<HealthCheckResult> => {
         const health = telemetry.getHealthMetrics();
         const stats = hybridEngine.getStats();
-        
-        // Check if search rate is reasonable (not too high to indicate errors)
         const isHealthy = health.errorRate < 0.1 && health.avgLatency < 5000;
-        
-        return {
+
+        return Promise.resolve({
           name: 'HybridSearch',
-          status: isHealthy ? 'healthy' : 'unhealthy',
+          status: isHealthy ? HealthStatus.HEALTHY : HealthStatus.UNHEALTHY,
           message: isHealthy ? 'Search engine operational' : 'Search engine performance degraded',
           timestamp: new Date().toISOString(),
           duration: 0,
           tags: ['search', 'hybrid', 'critical'],
-          metadata: {
+          details: {
             searchRate: health.searchRate,
             avgLatency: health.avgLatency,
             errorRate: health.errorRate,
             cacheHitRate: health.cacheHitRate,
             sparseStats: stats.sparseStats,
           },
-        };
+        });
       },
       timeout: 5000,
       isEnabled: () => true,
-    } as any; // Type assertion for HealthCheck interface
+    };
+
+    return hybridSearchHealthCheck;
   });
 
   // Register health checks with the service
@@ -520,7 +541,9 @@ export function configureContainer(config: MCPServerConfig): SimpleContainer {
 
     // Register all health checks
     const dbCheck = container.getService<DatabaseHealthCheck>(TOKENS.DATABASE_HEALTH_CHECK);
-    const vectorCheck = container.getService<VectorOperationsHealthCheck>(TOKENS.VECTOR_OPERATIONS_HEALTH_CHECK);
+    const vectorCheck = container.getService<VectorOperationsHealthCheck>(
+      TOKENS.VECTOR_OPERATIONS_HEALTH_CHECK
+    );
     const llmCheck = container.getService<LLMBridgeHealthCheck>(TOKENS.LLM_BRIDGE_HEALTH_CHECK);
 
     healthService.registerHealthCheck(dbCheck);

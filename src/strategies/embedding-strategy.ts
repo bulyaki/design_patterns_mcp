@@ -84,7 +84,10 @@ export class TransformersEmbeddingStrategy implements EmbeddingStrategy {
   readonly model = 'all-MiniLM-L6-v2';
 
   private pipeline: {
-    (texts: string[], options?: Record<string, unknown>): Promise<{ data: number[] | Float32Array }>;
+    (
+      texts: string[],
+      options?: Record<string, unknown>
+    ): Promise<{ data: number[] | Float32Array }>;
     (text: string, options?: Record<string, unknown>): Promise<{ data: number[] | Float32Array }>;
   } | null = null;
   private isInitialized = false;
@@ -110,7 +113,7 @@ export class TransformersEmbeddingStrategy implements EmbeddingStrategy {
       }
 
       const arrayData = Array.isArray(data) ? data : Array.from(data);
-      if (!arrayData.every((v) => typeof v === 'number')) {
+      if (!arrayData.every(v => typeof v === 'number')) {
         throw new Error('Invalid embedding data: expected array of numbers');
       }
 
@@ -148,9 +151,7 @@ export class TransformersEmbeddingStrategy implements EmbeddingStrategy {
         throw new Error('Invalid embedding data: expected array or Float32Array of numbers');
       }
 
-      const embeddingData = Array.isArray(data)
-        ? (data as number[])
-        : Array.from(data);
+      const embeddingData = Array.isArray(data) ? data : Array.from(data);
 
       // Handle batch response
       const embeddings: EmbeddingVector[] = [];
@@ -237,7 +238,7 @@ export class OllamaEmbeddingStrategy implements EmbeddingStrategy {
         throw new Error(`Ollama API error: ${response.statusText}`);
       }
 
-      const data = await response.json() as { embedding: number[] };
+      const data = (await response.json()) as { embedding: number[] };
 
       return {
         dimensions: data.embedding.length,
@@ -273,10 +274,11 @@ export class OllamaEmbeddingStrategy implements EmbeddingStrategy {
 
       if (!response.ok) return false;
 
-      const data = await response.json() as { models?: { name: string }[] };
+      const data = (await response.json()) as { models?: { name: string }[] };
       return (
         data.models?.some(
-          (model: { name: string }) => model.name.includes('all-minilm') || model.name.includes('embedding')
+          (model: { name: string }) =>
+            model.name.includes('all-minilm') || model.name.includes('embedding')
         ) ?? false
       );
     } catch {

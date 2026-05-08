@@ -17,9 +17,6 @@ import {
   ErrorCode,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
 import { DatabaseManager } from './services/database-manager.js';
 import { VectorOperationsService } from './services/vector-operations.js';
 import { PatternMatcher } from './services/pattern-matcher.js';
@@ -33,6 +30,7 @@ import { MCPRateLimiter } from './utils/rate-limiter.js';
 import { InputValidator } from './utils/input-validation.js';
 import { SimpleContainer, configureContainer, TOKENS } from './core/container.js';
 import { MCPServerConfigBuilder } from './core/config-builder.js';
+import { resolvePatternsPath } from './core/path-resolver.js';
 import { HealthCheckService } from './health/health-check-service.js';
 import { HealthStatus } from './health/types.js';
 import { DatabaseHealthCheck } from './health/database-health-check.js';
@@ -56,13 +54,210 @@ export interface MCPServerConfig {
   healthCheckPath?: string;
 }
 
-interface PatternRow { id: string; name: string; category: string; description?: string; when_to_use?: string; benefits?: string; drawbacks?: string; use_cases?: string; complexity?: string; tags?: string; examples?: string; created_at?: string; }
-interface PatternExample { language: string; code: string; description?: string; explanation?: string; }
-interface CountResult { count: number; }
-interface PatternImplementation { language: string; code: string; explanation?: string; }
+interface PatternRow {
+  id: string;
+  name: string;
+  category: string;
+  description?: string;
+  when_to_use?: string;
+  benefits?: string;
+  drawbacks?: string;
+  use_cases?: string;
+  complexity?: string;
+  tags?: string;
+  examples?: string;
+  created_at?: string;
+}
+interface PatternExample {
+  language: string;
+  code: string;
+  description?: string;
+  explanation?: string;
+}
+interface CountResult {
+  count: number;
+}
+interface PatternImplementation {
+  language: string;
+  code: string;
+  explanation?: string;
+}
+interface SearchPatternResult {
+  pattern: {
+    id: string;
+    name: string;
+    category: string;
+    description: string;
+    complexity?: string;
+    tags?: string[];
+  };
+  score: number;
+}
+
+function keywordSearch(db: DatabaseManager, query: string, limit: number): SearchPatternResult[] {
+  const normalizedQuery = `%${query}%`;
+  const rows = db.query<PatternRow>(
+    `
+      SELECT id, name, category, description, complexity, tags
+      FROM patterns
+      WHERE name LIKE ? OR description LIKE ? OR category LIKE ? OR tags LIKE ?
+      ORDER BY
+        CASE
+          WHEN LOWER(id) = LOWER(?) THEN 0
+          WHEN LOWER(name) = LOWER(?) THEN 1
+          WHEN LOWER(name) LIKE LOWER(?) THEN 2
+          ELSE 3
+        END,
+        name ASC
+      LIMIT ?
+    `,
+    [
+      normalizedQuery,
+      normalizedQuery,
+      normalizedQuery,
+      normalizedQuery,
+      query,
+      query,
+      normalizedQuery,
+      limit,
+    ]
+  );
+
+  return rows.map((row, index) => ({
+    pattern: {
+      id: row.id,
+      name: row.name,
+      category: row.category,
+      description: row.description ?? '',
+      complexity: row.complexity,
+      tags: parseTags(row.tags),
+    },
+    score: Math.max(0.1, 1 - index * 0.05),
+  }));
+}
+
+async function semanticSearchWithFallback(
+  semanticSearch: SemanticSearchService,
+  query: string,
+  limit: number
+): Promise<SearchPatternResult[]> {
+  const results = await semanticSearch.search({
+    text: query,
+    filters: {},
+    options: {
+      limit,
+      includeMetadata: true,
+    },
+  });
+
+  return results.map(result => ({
+    pattern: {
+      id: result.pattern.id ?? result.patternId,
+      name: result.pattern.name,
+      category: result.pattern.category,
+      description: result.pattern.description,
+      complexity: result.pattern.complexity,
+      tags: result.pattern.tags,
+    },
+    score: result.score,
+  }));
+}
+
+function mergeSearchResults(
+  semanticResults: SearchPatternResult[],
+  keywordResults: SearchPatternResult[],
+  limit: number
+): SearchPatternResult[] {
+  const merged = new Map<string, SearchPatternResult>();
+
+  for (const result of [...keywordResults, ...semanticResults]) {
+    const existing = merged.get(result.pattern.id);
+    if (!existing || result.score > existing.score) {
+      merged.set(result.pattern.id, result);
+    }
+  }
+
+  return Array.from(merged.values())
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit);
+}
+
+async function searchPatternsByType(
+  db: DatabaseManager,
+  semanticSearch: SemanticSearchService,
+  query: string,
+  searchType: string,
+  limit: number
+): Promise<{ results: SearchPatternResult[]; searchTypeUsed: string; degraded: boolean }> {
+  if (searchType === 'keyword') {
+    return {
+      results: keywordSearch(db, query, limit),
+      searchTypeUsed: 'keyword',
+      degraded: false,
+    };
+  }
+
+  if (searchType === 'semantic') {
+    return {
+      results: await semanticSearchWithFallback(semanticSearch, query, limit),
+      searchTypeUsed: 'semantic',
+      degraded: false,
+    };
+  }
+
+  try {
+    const semanticResults = await semanticSearchWithFallback(
+      semanticSearch,
+      query,
+      Math.ceil(limit / 2)
+    );
+    const keywordResults = keywordSearch(db, query, Math.ceil(limit / 2));
+
+    return {
+      results: mergeSearchResults(semanticResults, keywordResults, limit),
+      searchTypeUsed: 'hybrid',
+      degraded: false,
+    };
+  } catch {
+    return {
+      results: keywordSearch(db, query, limit),
+      searchTypeUsed: 'keyword',
+      degraded: true,
+    };
+  }
+}
+
+function formatSearchResults(
+  query: string,
+  searchTypeUsed: string,
+  degraded: boolean,
+  results: SearchPatternResult[]
+): string {
+  const degradedNotice = degraded
+    ? '\nSemantic search unavailable; falling back to keyword search.\n'
+    : '\n';
+
+  return (
+    `Search results for "${query}" (strategy: ${searchTypeUsed})${degradedNotice}\n` +
+    results
+      .map(
+        (result, index) =>
+          `${index + 1}. **${result.pattern.name}** (${result.pattern.category})\n` +
+          `   ID: ${result.pattern.id}\n` +
+          `   Score: ${(result.score * 100).toFixed(1)}%\n` +
+          `   Description: ${result.pattern.description}`
+      )
+      .join('\n')
+  );
+}
 
 // Stateless HTTP handler functions (reusable across server instances)
-function createHttpToolHandlers(db: DatabaseManager, patternMatcher: PatternMatcher, semanticSearch: SemanticSearchService, rateLimiter: MCPRateLimiter) {
+export function createHttpToolHandlers(
+  db: DatabaseManager,
+  patternMatcher: PatternMatcher,
+  semanticSearch: SemanticSearchService,
+  _rateLimiter: MCPRateLimiter
+) {
   return {
     tools: [
       {
@@ -71,10 +266,24 @@ function createHttpToolHandlers(db: DatabaseManager, patternMatcher: PatternMatc
         inputSchema: {
           type: 'object',
           properties: {
-            query: { type: 'string', description: 'Natural language description of the problem or requirements' },
-            categories: { type: 'array', items: { type: 'string' }, description: 'Optional: Pattern categories to search in' },
-            maxResults: { type: 'number', description: 'Maximum number of recommendations to return', default: 5 },
-            programmingLanguage: { type: 'string', description: 'Target programming language for implementation examples' },
+            query: {
+              type: 'string',
+              description: 'Natural language description of the problem or requirements',
+            },
+            categories: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional: Pattern categories to search in',
+            },
+            maxResults: {
+              type: 'number',
+              description: 'Maximum number of recommendations to return',
+              default: 5,
+            },
+            programmingLanguage: {
+              type: 'string',
+              description: 'Target programming language for implementation examples',
+            },
           },
           required: ['query'],
         },
@@ -86,7 +295,11 @@ function createHttpToolHandlers(db: DatabaseManager, patternMatcher: PatternMatc
           type: 'object',
           properties: {
             query: { type: 'string', description: 'Search query' },
-            searchType: { type: 'string', enum: ['keyword', 'semantic', 'hybrid'], default: 'hybrid' },
+            searchType: {
+              type: 'string',
+              enum: ['keyword', 'semantic', 'hybrid'],
+              default: 'hybrid',
+            },
             limit: { type: 'number', default: 10 },
           },
           required: ['query'],
@@ -109,7 +322,11 @@ function createHttpToolHandlers(db: DatabaseManager, patternMatcher: PatternMatc
         inputSchema: {
           type: 'object',
           properties: {
-            includeDetails: { type: 'boolean', description: 'Include breakdown by category', default: false },
+            includeDetails: {
+              type: 'boolean',
+              description: 'Include breakdown by category',
+              default: false,
+            },
           },
         },
       },
@@ -119,39 +336,107 @@ function createHttpToolHandlers(db: DatabaseManager, patternMatcher: PatternMatc
         inputSchema: {
           type: 'object',
           properties: {
-            checkName: { type: 'string', description: 'Optional: Check only a specific health check by name' },
-            tags: { type: 'array', items: { type: 'string' }, description: 'Optional: Filter health checks by tags' },
+            checkName: {
+              type: 'string',
+              description: 'Optional: Check only a specific health check by name',
+            },
+            tags: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional: Filter health checks by tags',
+            },
           },
         },
       },
     ],
     handleFindPatterns: async (args: unknown) => {
       const validatedArgs = InputValidator.validateFindPatternsArgs(args);
-      const request = { id: crypto.randomUUID(), query: validatedArgs.query, categories: validatedArgs.categories, maxResults: validatedArgs.maxResults, programmingLanguage: validatedArgs.programmingLanguage };
+      const request = {
+        id: crypto.randomUUID(),
+        query: validatedArgs.query,
+        categories: validatedArgs.categories,
+        maxResults: validatedArgs.maxResults,
+        programmingLanguage: validatedArgs.programmingLanguage,
+      };
       const recommendations = await patternMatcher.findMatchingPatterns(request);
-      return { content: [{ type: 'text', text: `Found ${recommendations.length} pattern recommendations:\n\n${recommendations.map((rec, i) => `${i + 1}. **${rec.pattern.name}** (${rec.pattern.category})\n   ID: ${rec.pattern.id}\n   Confidence: ${(rec.confidence * 100).toFixed(1)}%\n   Rationale: ${rec.justification.primaryReason}\n   Benefits: ${Array.isArray(rec.justification.benefits) ? rec.justification.benefits.join(', ') : 'N/A'}`).join('\n')}` }] };
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Found ${recommendations.length} pattern recommendations:\n\n${recommendations.map((rec, i) => `${i + 1}. **${rec.pattern.name}** (${rec.pattern.category})\n   ID: ${rec.pattern.id}\n   Confidence: ${(rec.confidence * 100).toFixed(1)}%\n   Rationale: ${rec.justification.primaryReason}\n   Benefits: ${Array.isArray(rec.justification.benefits) ? rec.justification.benefits.join(', ') : 'N/A'}`).join('\n')}`,
+          },
+        ],
+      };
     },
     handleSearchPatterns: async (args: unknown) => {
       const validatedArgs = InputValidator.validateSearchPatternsArgs(args);
-      const results = await semanticSearch.search({ text: validatedArgs.query, filters: {}, options: { limit: validatedArgs.limit, includeMetadata: true } });
-      return { content: [{ type: 'text', text: `Search results for "${validatedArgs.query}":\n\n${results.map((r, i) => `${i + 1}. **${r.pattern.name}** (${r.pattern.category})\n   ID: ${r.pattern.id}\n   Score: ${(r.score * 100).toFixed(1)}%\n   Description: ${r.pattern.description}`).join('\n')}` }] };
+      const searchResult = await searchPatternsByType(
+        db,
+        semanticSearch,
+        validatedArgs.query,
+        validatedArgs.searchType,
+        validatedArgs.limit
+      );
+      return {
+        content: [
+          {
+            type: 'text',
+            text: formatSearchResults(
+              validatedArgs.query,
+              searchResult.searchTypeUsed,
+              searchResult.degraded,
+              searchResult.results
+            ),
+          },
+        ],
+      };
     },
     handleCountPatterns: (args: unknown) => {
       const validatedArgs = InputValidator.validateCountPatternsArgs(args);
       const totalResult = db.queryOne<{ total: number }>('SELECT COUNT(*) as total FROM patterns');
       const total = totalResult?.total ?? 0;
       if (validatedArgs.includeDetails) {
-        const breakdown = db.query<{ category: string; count: number }>('SELECT category, COUNT(*) as count FROM patterns GROUP BY category ORDER BY count DESC');
-        return { content: [{ type: 'text', text: `## Total Design Patterns: ${total}\n\n### Breakdown by Category:\n${breakdown.map(item => `- **${item.category}**: ${item.count} patterns`).join('\n')}\n\n*Total patterns from all sources: ${total}*` }] };
+        const breakdown = db.query<{ category: string; count: number }>(
+          'SELECT category, COUNT(*) as count FROM patterns GROUP BY category ORDER BY count DESC'
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `## Total Design Patterns: ${total}\n\n### Breakdown by Category:\n${breakdown.map(item => `- **${item.category}**: ${item.count} patterns`).join('\n')}\n\n*Total patterns from all sources: ${total}*`,
+            },
+          ],
+        };
       }
-      return { content: [{ type: 'text', text: `Total design patterns in database: **${total}**` }] };
+      return {
+        content: [{ type: 'text', text: `Total design patterns in database: **${total}**` }],
+      };
     },
   };
 }
 
-interface PatternRow { id: string; name: string; category: string; description?: string; when_to_use?: string; benefits?: string; drawbacks?: string; use_cases?: string; complexity?: string; tags?: string; examples?: string; created_at?: string; }
-interface PatternImplementation { language: string; code: string; explanation?: string; }
-interface CountResult { count: number; }
+interface PatternRow {
+  id: string;
+  name: string;
+  category: string;
+  description?: string;
+  when_to_use?: string;
+  benefits?: string;
+  drawbacks?: string;
+  use_cases?: string;
+  complexity?: string;
+  tags?: string;
+  examples?: string;
+  created_at?: string;
+}
+interface PatternImplementation {
+  language: string;
+  code: string;
+  explanation?: string;
+}
+interface CountResult {
+  count: number;
+}
 
 class DesignPatternsMCPServer {
   private server: Server;
@@ -168,11 +453,13 @@ class DesignPatternsMCPServer {
   private logger: Logger;
   private healthCheckService?: HealthCheckService;
 
-  constructor(configBuilder: MCPServerConfigBuilder | MCPServerConfig, container?: SimpleContainer) {
+  constructor(
+    configBuilder: MCPServerConfigBuilder | MCPServerConfig,
+    container?: SimpleContainer
+  ) {
     // Build configuration using Builder Pattern if provided, otherwise use legacy config
-    this.config = configBuilder instanceof MCPServerConfigBuilder
-      ? configBuilder.build()
-      : configBuilder;
+    this.config =
+      configBuilder instanceof MCPServerConfigBuilder ? configBuilder.build() : configBuilder;
     this.container = container;
 
     // Use logger from container if available, otherwise use global logger
@@ -181,21 +468,21 @@ class DesignPatternsMCPServer {
     // Initialize health check service
     this.healthCheckService = new HealthCheckService({ enabled: true, timeout: 30000 });
 
-
-
     // Use DI container if provided, otherwise fallback to direct instantiation
     if (container) {
       // Resolve dependencies from container
-    this.db = container.getService<DatabaseManager>(TOKENS.DATABASE_MANAGER);
-    this.vectorOps = container.getService<VectorOperationsService>(TOKENS.VECTOR_OPERATIONS);
-    this.semanticSearch = container.getService<SemanticSearchService>(TOKENS.SEMANTIC_SEARCH);
-    this.patternMatcher = container.getService<PatternMatcher>(TOKENS.PATTERN_MATCHER);
-    this.migrationManager = container.getService<MigrationManager>(TOKENS.MIGRATION_MANAGER);
-    this.patternSeeder = container.getService<PatternSeeder>(TOKENS.PATTERN_SEEDER);
-    this.rateLimiter = container.getService<MCPRateLimiter>(TOKENS.RATE_LIMITER);
+      this.db = container.getService<DatabaseManager>(TOKENS.DATABASE_MANAGER);
+      this.vectorOps = container.getService<VectorOperationsService>(TOKENS.VECTOR_OPERATIONS);
+      this.semanticSearch = container.getService<SemanticSearchService>(TOKENS.SEMANTIC_SEARCH);
+      this.patternMatcher = container.getService<PatternMatcher>(TOKENS.PATTERN_MATCHER);
+      this.migrationManager = container.getService<MigrationManager>(TOKENS.MIGRATION_MANAGER);
+      this.patternSeeder = container.getService<PatternSeeder>(TOKENS.PATTERN_SEEDER);
+      this.rateLimiter = container.getService<MCPRateLimiter>(TOKENS.RATE_LIMITER);
 
-    // Get health check service from container
-    this.healthCheckService = container.getService<HealthCheckService>(TOKENS.HEALTH_CHECK_SERVICE);
+      // Get health check service from container
+      this.healthCheckService = container.getService<HealthCheckService>(
+        TOKENS.HEALTH_CHECK_SERVICE
+      );
 
       // Optional LLM bridge
       if (this.config.enableLLM && container.has(TOKENS.LLM_BRIDGE)) {
@@ -207,10 +494,10 @@ class DesignPatternsMCPServer {
       this.db = new DatabaseManager({
         filename: this.config.databasePath,
         options: {
-        verbose:
-          this.config.logLevel === 'debug'
-            ? (message: string) => this.logger.debug('database', message)
-            : undefined,
+          verbose:
+            this.config.logLevel === 'debug'
+              ? (message: string) => this.logger.debug('database', message)
+              : undefined,
         },
       });
 
@@ -246,7 +533,6 @@ class DesignPatternsMCPServer {
 
       if (this.config.enableLLM) {
         this.llmBridge = new LLMBridgeService(this.db, {
-
           provider: 'ollama',
           model: 'llama3.2',
           maxTokens: 2000,
@@ -258,24 +544,13 @@ class DesignPatternsMCPServer {
       // Register health checks (fallback mode)
       const dbCheck = new DatabaseHealthCheck(this.db);
       const vectorCheck = new VectorOperationsHealthCheck(this.vectorOps);
-      const llmCheck = new LLMBridgeHealthCheck(this.llmBridge || null);
+      const llmCheck = new LLMBridgeHealthCheck(this.llmBridge ?? null);
 
       this.healthCheckService.registerHealthCheck(dbCheck);
       this.healthCheckService.registerHealthCheck(vectorCheck);
       this.healthCheckService.registerHealthCheck(llmCheck);
 
-      // Get the directory of the current module
-      const __filename = fileURLToPath(import.meta.url);
-      const __dirname = path.dirname(__filename);
-
-      // Resolve path relative to project root
-      // When running from src/, no need to go up
-      // When running from dist/src/, go up two levels
-      const isCompiled = __dirname.includes('dist');
-      const projectRoot = isCompiled
-        ? path.resolve(__dirname, '..', '..')
-        : path.resolve(__dirname, '..');
-      const patternsPath = path.join(projectRoot, 'data', 'patterns');
+      const patternsPath = resolvePatternsPath(import.meta.url);
 
       this.migrationManager = new MigrationManager(this.db);
       this.patternSeeder = new PatternSeeder(this.db, {
@@ -301,7 +576,7 @@ class DesignPatternsMCPServer {
     this.server = new Server(
       {
         name: 'design-patterns-mcp',
-        version: '0.4.3',
+        version: '0.4.4',
       },
       {
         capabilities: {
@@ -412,7 +687,8 @@ class DesignPatternsMCPServer {
                 tags: {
                   type: 'array',
                   items: { type: 'string' },
-                  description: 'Optional: Filter health checks by tags (e.g., ["database", "critical"])',
+                  description:
+                    'Optional: Filter health checks by tags (e.g., ["database", "critical"])',
                 },
               },
             },
@@ -537,32 +813,24 @@ class DesignPatternsMCPServer {
 
   private async handleSearchPatterns(args: unknown): Promise<CallToolResult> {
     const validatedArgs = InputValidator.validateSearchPatternsArgs(args);
-    const query = {
-      text: validatedArgs.query,
-      filters: {},
-      options: {
-        limit: validatedArgs.limit,
-        includeMetadata: true,
-      },
-    };
-
-    const results = await this.semanticSearch.search(query);
+    const searchResult = await searchPatternsByType(
+      this.db,
+      this.semanticSearch,
+      validatedArgs.query,
+      validatedArgs.searchType,
+      validatedArgs.limit
+    );
 
     return {
       content: [
         {
           type: 'text',
-          text:
-            `Search results for "${validatedArgs.query}":\n\n` +
-            results
-              .map(
-                (result, index) =>
-                  `${index + 1}. **${result.pattern.name}** (${result.pattern.category})\n` +
-                  `   ID: ${result.pattern.id}\n` +
-                  `   Score: ${(result.score * 100).toFixed(1)}%\n` +
-                  `   Description: ${result.pattern.description}\n`
-              )
-              .join('\n'),
+          text: formatSearchResults(
+            validatedArgs.query,
+            searchResult.searchTypeUsed,
+            searchResult.degraded,
+            searchResult.results
+          ),
         },
       ],
     };
@@ -811,7 +1079,9 @@ class DesignPatternsMCPServer {
   }
 
   // Resource handlers
-  private handleReadPatterns(): { contents: Array<{ uri: string; mimeType: string; text: string }> } {
+  private handleReadPatterns(): {
+    contents: Array<{ uri: string; mimeType: string; text: string }>;
+  } {
     // OPTIMIZATION: Add pagination with LIMIT to prevent loading all 574+ patterns
     const patterns = this.db.query(
       'SELECT id, name, category, description, complexity, tags FROM patterns ORDER BY name LIMIT 100'
@@ -828,7 +1098,9 @@ class DesignPatternsMCPServer {
     };
   }
 
-  private handleReadCategories(): { contents: Array<{ uri: string; mimeType: string; text: string }> } {
+  private handleReadCategories(): {
+    contents: Array<{ uri: string; mimeType: string; text: string }>;
+  } {
     const categories = this.db.query(`
       SELECT category, COUNT(*) as count 
       FROM patterns 
@@ -847,14 +1119,17 @@ class DesignPatternsMCPServer {
     };
   }
 
-  private handleReadServerInfo(): { contents: Array<{ uri: string; mimeType: string; text: string }> } {
+  private handleReadServerInfo(): {
+    contents: Array<{ uri: string; mimeType: string; text: string }>;
+  } {
     const info = {
       name: 'Design Patterns MCP Server',
       version: '0.4.3',
       status: 'running',
       database: {
         path: this.config.databasePath,
-        patternCount: this.db.queryOne<CountResult>('SELECT COUNT(*) as count FROM patterns')?.count ?? 0,
+        patternCount:
+          this.db.queryOne<CountResult>('SELECT COUNT(*) as count FROM patterns')?.count ?? 0,
       },
       features: {
         semanticSearch: true,
@@ -912,9 +1187,10 @@ class DesignPatternsMCPServer {
     this.logger.info('mcp-server', 'Server started and listening on stdio');
   }
 
-  async startHttp(): Promise<void> {
-    const port = this.config.httpPort || 3000;
-    const healthPath = this.config.healthCheckPath || '/health';
+  startHttp(): Promise<void> {
+    const port = this.config.httpPort ?? 3000;
+    const healthPath = this.config.healthCheckPath ?? '/health';
+    const mcpEndpoint = this.config.mcpEndpoint ?? '/mcp';
     const mcpServer = this.server;
 
     Bun.serve({
@@ -927,7 +1203,7 @@ class DesignPatternsMCPServer {
           return new Response('OK', { status: 200 });
         }
 
-        if (url.pathname === '/mcp' || url.pathname.startsWith('/mcp/')) {
+        if (url.pathname === mcpEndpoint || url.pathname.startsWith(`${mcpEndpoint}/`)) {
           const transport = new WebStandardStreamableHTTPServerTransport({
             sessionIdGenerator: undefined,
             enableJsonResponse: true,
@@ -942,6 +1218,7 @@ class DesignPatternsMCPServer {
     });
 
     this.logger.info('mcp-server', `HTTP server listening on port ${port}`);
+    return Promise.resolve();
   }
 
   async stop(): Promise<void> {
@@ -976,7 +1253,7 @@ async function main(): Promise<void> {
   // Build configuration using Builder Pattern
   const config = MCPServerConfigBuilder.fromEnvironment().build();
 
-  const server = createDesignPatternsServer(config);
+  const server = createDesignPatternsServerWithDI(config);
 
   try {
     await server.initialize();
@@ -1016,13 +1293,21 @@ async function main(): Promise<void> {
 
   process.on('SIGINT', () => {
     shutdown('SIGINT').catch((error: unknown) => {
-      logger.error('main', 'Error during SIGINT shutdown', error instanceof Error ? error : new Error(String(error)));
+      logger.error(
+        'main',
+        'Error during SIGINT shutdown',
+        error instanceof Error ? error : new Error(String(error))
+      );
       process.exit(1);
     });
   });
   process.on('SIGTERM', () => {
     shutdown('SIGTERM').catch((error: unknown) => {
-      logger.error('main', 'Error during SIGTERM shutdown', error instanceof Error ? error : new Error(String(error)));
+      logger.error(
+        'main',
+        'Error during SIGTERM shutdown',
+        error instanceof Error ? error : new Error(String(error))
+      );
       process.exit(1);
     });
   });

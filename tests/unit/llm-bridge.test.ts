@@ -14,7 +14,7 @@ import type {
   PatternRecommendation,
   LLMEnhancement,
   PatternAnalysisRequest,
-  PatternAnalysisResponse
+  PatternAnalysisResponse,
 } from '../../src/services/llm-bridge.js';
 
 // Mock the database manager
@@ -30,7 +30,11 @@ class TestableLLMBridgeService extends LLMBridgeService {
     return super.buildAnalysisPrompt(request);
   }
 
-  public override buildImplementationPrompt(pattern: Partial<Pattern>, language: string, context?: UserContext): string {
+  public override buildImplementationPrompt(
+    pattern: Partial<Pattern>,
+    language: string,
+    context?: UserContext
+  ): string {
     return super.buildImplementationPrompt(pattern, language, context);
   }
 
@@ -38,7 +42,10 @@ class TestableLLMBridgeService extends LLMBridgeService {
     return super.getPatternInfo(patternName);
   }
 
-  public override mergeEnhancements(baseRecommendations: PatternRecommendation[], enhancements: LLMEnhancement[]): PatternRecommendation[] {
+  public override mergeEnhancements(
+    baseRecommendations: PatternRecommendation[],
+    enhancements: LLMEnhancement[]
+  ): PatternRecommendation[] {
     return super.mergeEnhancements(baseRecommendations, enhancements);
   }
 
@@ -94,12 +101,14 @@ describe('LLM Bridge Service', () => {
       context: {
         existingPatterns: ['Singleton', 'Factory'],
         constraints: ['scalability', 'maintainability'],
-        preferences: []
+        preferences: [],
       },
     };
 
     // Mock LLM call to fail
-    const callLLMSpy = vi.spyOn(llmBridge, 'callLLM').mockRejectedValue(new Error('LLM unavailable'));
+    const callLLMSpy = vi
+      .spyOn(llmBridge, 'callLLM')
+      .mockRejectedValue(new Error('LLM unavailable'));
 
     const result = await llmBridge.analyzePatterns(request);
 
@@ -113,11 +122,9 @@ describe('LLM Bridge Service', () => {
   });
 
   test('should generate implementation guidance', async () => {
-    const result = await llmBridge.generateImplementationGuidance(
-      'Observer',
-      'TypeScript',
-      { experienceLevel: 'intermediate' }
-    );
+    const result = await llmBridge.generateImplementationGuidance('Observer', 'TypeScript', {
+      experienceLevel: 'intermediate',
+    });
 
     expect(result).toBeDefined();
     expect(typeof result).toBe('string');
@@ -173,7 +180,7 @@ describe('LLM Bridge Service', () => {
     expect(result.length).toBeGreaterThan(0);
   });
 
-  test('should get pattern info from database', async () => {
+  test('should get pattern info from database', () => {
     // Mock database to return pattern data
     mockDb.queryOne.mockImplementation((query: string, params: readonly unknown[] = []) => {
       if (query.includes('patterns') && params[0] === 'Singleton') {
@@ -186,7 +193,7 @@ describe('LLM Bridge Service', () => {
           benefits: '[]',
           drawbacks: '[]',
           use_cases: '[]',
-          tags: '[]'
+          tags: '[]',
         };
       }
       return null;
@@ -220,7 +227,7 @@ describe('LLM Bridge Service', () => {
       context: {
         existingPatterns: ['Singleton', 'Factory'],
         constraints: ['scalability', 'maintainability'],
-        preferences: []
+        preferences: [],
       },
     };
 
@@ -235,7 +242,11 @@ describe('LLM Bridge Service', () => {
   });
 
   test('should build implementation prompt correctly', () => {
-    const pattern = { name: 'Observer', description: 'Publish-subscribe pattern', category: 'Behavioral' };
+    const pattern = {
+      name: 'Observer',
+      description: 'Publish-subscribe pattern',
+      category: 'Behavioral',
+    };
     const context: UserContext = { experienceLevel: 'intermediate' };
 
     const prompt = llmBridge.buildImplementationPrompt(pattern, 'TypeScript', context);
@@ -272,7 +283,7 @@ describe('LLM Bridge Service', () => {
         reasoning: 'Good for shared resources',
         benefits: [],
         drawbacks: [],
-        useCases: []
+        useCases: [],
       },
     ];
 
@@ -282,7 +293,7 @@ describe('LLM Bridge Service', () => {
         enhancedReasoning: 'Excellent for database connections',
         additionalBenefits: ['Memory efficiency'],
         additionalDrawbacks: [],
-        additionalUseCases: []
+        additionalUseCases: [],
       },
     ];
 
