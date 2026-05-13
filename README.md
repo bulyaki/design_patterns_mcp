@@ -1,12 +1,12 @@
 # Design Patterns MCP Server
 
-[![Version](https://img.shields.io/badge/version-0.4.4-blue.svg)](https://github.com/apolosan/design_patterns_mcp)
+[![Version](https://img.shields.io/badge/version-0.5.1-blue.svg)](https://github.com/apolosan/design_patterns_mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Test Status](https://img.shields.io/badge/tests-464%20%7C%20100%25-brightgreen.svg)](#testing)
-[![Patterns](https://img.shields.io/badge/patterns-685%2B-orange.svg)](#available-pattern-categories)
+[![Test Status](https://img.shields.io/badge/tests-525%20%7C%20100%25-brightgreen.svg)](#testing)
+[![Patterns](https://img.shields.io/badge/patterns-705%2B-orange.svg)](#available-pattern-categories)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
 
-An intelligent MCP (Model Context Protocol) server that provides design pattern recommendations using hybrid search (semantic + keyword + graph augmentation). Access **685+ design patterns** across 90+ categories through a natural language interface with advanced blended RAG architecture.
+An intelligent MCP (Model Context Protocol) server that provides design pattern recommendations using hybrid search (semantic + keyword + graph augmentation). Access **705+ design patterns** across 90+ categories through a natural language interface with advanced blended RAG architecture.
 
 ## Quick Start
 
@@ -30,25 +30,30 @@ node dist/src/cli/setup-relationships.js
 
 Configure in your MCP client (Claude Desktop, Cursor, etc.) and start discovering patterns through natural language queries.
 
+## Tooling and build hygiene
+
+- Use **Bun** as the canonical package manager for this repository (`bun install` only). The lockfile is `bun.lock`.
+- Never copy a `.git` directory into `dist/data` (or ship it inside `dist/`). That path must remain a plain data directory to avoid multi‑gigabyte images and metadata leakage.
+
 ## Features
 
 | Feature | Description |
 |---------|-------------|
 | **Hybrid Search Engine** | Blended RAG combining semantic, keyword (TF-IDF), and graph-augmented retrieval |
-| **685+ Patterns** | Comprehensive catalog across 12 major categories |
+| **705+ Patterns** | Comprehensive catalog across 12 major categories (includes **Feature Flag** / Feature Toggle for progressive delivery and experimentation) |
 | **MCP Integration** | Seamless integration with Claude, Cursor, and other MCP clients |
 | **Multi-Level Caching** | L1 in-memory + L3 SQLite cache with 95%+ hit rate |
 | **Event Bus System** | Decoupled service communication via pub/sub |
 | **Telemetry & Health** | Real-time performance metrics and system monitoring |
 | **SOLID Architecture** | Clean, maintainable codebase following best practices |
-| **Production Ready** | 464 test cases with 100% pass rate |
+| **Production Ready** | 525 test cases with 100% pass rate |
 
 ## Available Pattern Categories
 
 | Category | Count | Examples |
 |----------|-------|----------|
 | **Classic GoF Patterns** | 34 | Factory, Builder, Observer, Strategy, Command |
-| **Architectural Patterns** | 56 | MVC, Clean Architecture, Hexagonal, DDD |
+| **Architectural Patterns** | 56 | MVC, Clean Architecture, Hexagonal, DDD, **Feature Flag** |
 | **Microservices & Cloud** | 39 | Circuit Breaker, Saga, Service Mesh |
 | **Data Engineering** | 54 | Repository, CQRS, Event Sourcing |
 | **AI/ML & MLOps** | 46 | RAG, Fine-Tuning, Model Compression |
@@ -77,7 +82,7 @@ src/
 └── mcp-server.ts          # MCP server entry point
 
 data/
-├── patterns/              # 750+ JSON pattern definitions
+├── patterns/              # 705+ JSON pattern definitions (see `feature-flag.json`)
 └── design-patterns.db     # SQLite database with embeddings
 ```
 
@@ -251,7 +256,7 @@ bun run typecheck    # TypeScript type checking
 
 ## Testing
 
-The project includes **464 test cases across 41 test files** with 100% pass rate:
+The project includes **525 test cases across 44 test files** with 100% pass rate:
 
 - **Contract Tests**: MCP protocol compliance validation
 - **Integration Tests**: Component interaction tests
@@ -305,7 +310,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**Version**: 0.4.4  
-**Last Updated**: February 2026  
-**Patterns**: 685+ (750+ JSON files)  
-**Tests**: 464 test cases | 100% pass rate
+**Version**: 0.5.1  
+**Last Updated**: May 2026  
+**Patterns**: 705+ JSON definitions (highlight: **Feature Flag** / Feature Toggle)  
+**Tests**: 525 test cases | 100% pass rate

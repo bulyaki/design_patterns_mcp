@@ -5,6 +5,7 @@
 import { getDatabaseManager } from './database-manager.js';
 import type { Pattern } from '../models/pattern.js';
 import { isArray } from '../utils/type-guards.js';
+import { coerceToStringArray } from '../utils/parse-tags.js';
 
 // Re-export Pattern interface for backwards compatibility
 export type { Pattern } from '../models/pattern.js';
@@ -75,14 +76,12 @@ export class PatternStorageService {
        pattern.name,
        pattern.category,
        pattern.description,
-       Array.isArray(pattern.when_to_use) ? pattern.when_to_use.join(',') : '',
-       Array.isArray(pattern.benefits) ? pattern.benefits.join(',') : '',
-       Array.isArray(pattern.drawbacks) ? pattern.drawbacks.join(',') : '',
-       Array.isArray(pattern.use_cases)
-         ? pattern.use_cases.join(',')
-         : (pattern.useCases ?? []).join(','),
+       coerceToStringArray(pattern.when_to_use, 'when_to_use').join(','),
+       coerceToStringArray(pattern.benefits, 'benefits').join(','),
+       coerceToStringArray(pattern.drawbacks, 'drawbacks').join(','),
+       coerceToStringArray(pattern.use_cases ?? pattern.useCases, 'use_cases').join(','),
        pattern.complexity,
-       Array.isArray(pattern.tags) ? pattern.tags.join(',') : '',
+       coerceToStringArray(pattern.tags, 'tags').join(','),
        pattern.examples ? JSON.stringify(pattern.examples) : null,
      ];
 

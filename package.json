@@ -1,7 +1,7 @@
 {
   "name": "design-patterns-mcp",
-  "version": "0.4.4",
-  "description": "MCP server providing intelligent design pattern recommendations from a comprehensive catalog of 685+ patterns using semantic search, vector embeddings, TF-IDF keyword search, and blended RAG hybrid search with graph augmentation",
+  "version": "0.5.1",
+  "description": "MCP server providing intelligent design pattern recommendations from a comprehensive catalog of 705+ patterns using semantic search, vector embeddings, TF-IDF keyword search, and blended RAG hybrid search with graph augmentation",
   "main": "dist/src/mcp-server.js",
   "module": "dist/src/mcp-server.js",
   "types": "dist/src/mcp-server.d.ts",
@@ -37,7 +37,7 @@
   "type": "module",
   "scripts": {
     "prepare": "bun run build",
-    "build": "tsc",
+    "build": "rimraf dist && tsc -p tsconfig.build.json",
     "postbuild": "chmod +x dist/src/mcp-server.js dist/src/cli/*.js 2>/dev/null || true",
     "start": "bun run build && bun dist/src/mcp-server.js",
     "dev": "bun --hot src/mcp-server.ts",
@@ -155,7 +155,8 @@
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
     "@vitest/coverage-v8": "^1.1.0",
-    "bun-types": "latest",
+    "bun-types": "^1.2.21",
+    "rimraf": "^6.0.1",
     "eslint": "^8.0.0",
     "typescript": "^5.3.0",
     "vitest": "^1.1.0"

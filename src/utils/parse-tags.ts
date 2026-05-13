@@ -90,3 +90,21 @@ export function parseArrayProperty(
 export function parseTags(tags: string | string[] | null | undefined): string[] {
   return parseArrayProperty(tags, 'tags');
 }
+
+/**
+ * Coerce unknown values (e.g. malformed DB or transport payloads) into string[]
+ * so callers can safely join/format without assuming Array.isArray upstream.
+ */
+export function coerceToStringArray(data: unknown, propertyName?: string): string[] {
+  if (data == null) return [];
+  if (Array.isArray(data)) {
+    return data.map(item => String(item));
+  }
+  if (typeof data === 'string') {
+    return parseArrayProperty(data, propertyName);
+  }
+  if (typeof data === 'number' || typeof data === 'boolean') {
+    return [String(data)];
+  }
+  return [];
+}

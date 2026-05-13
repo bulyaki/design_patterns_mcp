@@ -207,7 +207,7 @@ export class KeywordSearchHandler implements SearchHandler {
   private calculateKeywordScore(queryWords: string[], pattern: PatternSummary): number {
     let score = 0;
     const patternText =
-      `${pattern.name} ${pattern.description} ${pattern.tags?.join(' ') ?? ''}`.toLowerCase();
+      `${pattern.name} ${pattern.description} ${parseTags(pattern.tags).join(' ')}`.toLowerCase();
 
     for (const word of queryWords) {
       if (patternText.includes(word)) {

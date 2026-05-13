@@ -25,7 +25,7 @@ import { LLMBridgeService } from './services/llm-bridge.js';
 import { MigrationManager } from './services/migrations.js';
 import { PatternSeeder } from './services/pattern-seeder.js';
 import { logger } from './services/logger.js';
-import { parseTags, parseArrayProperty } from './utils/parse-tags.js';
+import { parseTags, parseArrayProperty, coerceToStringArray } from './utils/parse-tags.js';
 import { MCPRateLimiter } from './utils/rate-limiter.js';
 import { InputValidator } from './utils/input-validation.js';
 import { SimpleContainer, configureContainer, TOKENS } from './core/container.js';
@@ -363,7 +363,7 @@ export function createHttpToolHandlers(
         content: [
           {
             type: 'text',
-            text: `Found ${recommendations.length} pattern recommendations:\n\n${recommendations.map((rec, i) => `${i + 1}. **${rec.pattern.name}** (${rec.pattern.category})\n   ID: ${rec.pattern.id}\n   Confidence: ${(rec.confidence * 100).toFixed(1)}%\n   Rationale: ${rec.justification.primaryReason}\n   Benefits: ${Array.isArray(rec.justification.benefits) ? rec.justification.benefits.join(', ') : 'N/A'}`).join('\n')}`,
+            text: `Found ${recommendations.length} pattern recommendations:\n\n${recommendations.map((rec, i) => `${i + 1}. **${rec.pattern.name}** (${rec.pattern.category})\n   ID: ${rec.pattern.id}\n   Confidence: ${(rec.confidence * 100).toFixed(1)}%\n   Rationale: ${rec.justification.primaryReason}\n   Benefits: ${coerceToStringArray(rec.justification.benefits, 'benefits').join(', ') || 'N/A'}`).join('\n')}`,
           },
         ],
       };
@@ -576,7 +576,7 @@ class DesignPatternsMCPServer {
     this.server = new Server(
       {
         name: 'design-patterns-mcp',
-        version: '0.4.4',
+        version: '0.5.1',
       },
       {
         capabilities: {
@@ -803,7 +803,7 @@ class DesignPatternsMCPServer {
                   `   ID: ${rec.pattern.id}\n` +
                   `   Confidence: ${(rec.confidence * 100).toFixed(1)}%\n` +
                   `   Rationale: ${rec.justification.primaryReason}\n` +
-                  `   Benefits: ${Array.isArray(rec.justification.benefits) ? rec.justification.benefits.join(', ') : 'N/A'}\n`
+                  `   Benefits: ${coerceToStringArray(rec.justification.benefits, 'benefits').join(', ') || 'N/A'}\n`
               )
               .join('\n'),
         },
@@ -1055,8 +1055,9 @@ class DesignPatternsMCPServer {
           response += `   - **Details:** ${JSON.stringify(check.details, null, 2)}\n`;
         }
 
-        if (check.tags && check.tags.length > 0) {
-          response += `   - **Tags:** ${check.tags.join(', ')}\n`;
+        const healthTags = coerceToStringArray(check.tags, 'tags');
+        if (healthTags.length > 0) {
+          response += `   - **Tags:** ${healthTags.join(', ')}\n`;
         }
 
         response += `\n`;
@@ -1124,7 +1125,7 @@ class DesignPatternsMCPServer {
   } {
     const info = {
       name: 'Design Patterns MCP Server',
-      version: '0.4.3',
+      version: '0.5.1',
       status: 'running',
       database: {
         path: this.config.databasePath,

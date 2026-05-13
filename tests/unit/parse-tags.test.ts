@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseArrayProperty, parseTags } from '../../src/utils/parse-tags.js';
+import { parseArrayProperty, parseTags, coerceToStringArray } from '../../src/utils/parse-tags.js';
 
 describe('parseArrayProperty', () => {
   it('parses JSON arrays', () => {
@@ -22,5 +22,21 @@ describe('parseArrayProperty', () => {
 
   it('returns a single value for array-like properties when only one item exists', () => {
     expect(parseArrayProperty('Single item', 'use_cases')).toEqual(['Single item']);
+  });
+});
+
+describe('coerceToStringArray', () => {
+  it('parses JSON string benefits like a serialized array', () => {
+    expect(coerceToStringArray('["alpha","beta"]', 'benefits')).toEqual(['alpha', 'beta']);
+  });
+
+  it('normalizes scalar and null inputs without throwing', () => {
+    expect(coerceToStringArray(null, 'benefits')).toEqual([]);
+    expect(coerceToStringArray(42, 'benefits')).toEqual(['42']);
+    expect(coerceToStringArray(true, 'benefits')).toEqual(['true']);
+  });
+
+  it('passes through real arrays while stringifying elements', () => {
+    expect(coerceToStringArray(['x', 2], 'tags')).toEqual(['x', '2']);
   });
 });

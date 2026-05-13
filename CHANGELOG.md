@@ -5,6 +5,27 @@ All notable changes to the Design Patterns MCP Server project will be documented
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-05-13
+
+### Added
+
+- **Feature Flag (Feature Toggle) pattern**: Rich catalog entry at `data/patterns/feature-flag.json` with TypeScript examples, governance metadata, and relationships to Canary Deployment, Circuit Breaker, Strategy, and Strangler Fig.
+- **GitHub Actions CI** (`.github/workflows/ci.yml`): `lint` → `typecheck` → `test` → `build` using Bun with `bun install --frozen-lockfile`.
+- **`tsconfig.build.json`**: Production build compiles `src/**` only so `dist/tests` is not emitted.
+- **`coerceToStringArray`** in `src/utils/parse-tags.ts` for safe normalization of list-like fields before formatting or persistence.
+- **`.dockerignore`**: Smaller Docker context (excludes `dist/`, `coverage/`, `.git/`, `worktrees/`, `node_modules/`, logs, and `package-lock.json`).
+
+### Changed
+
+- **Build pipeline**: `rimraf dist && tsc -p tsconfig.build.json` (devDependency `rimraf`).
+- **Docker**: `HEALTHCHECK` skips the HTTP probe when `TRANSPORT_MODE=stdio` or `DISABLE_HEALTHCHECK=1`; uses `${HTTP_PORT}` and `${HEALTH_CHECK_PATH}` in HTTP mode.
+- **Tooling**: Canonical lockfile is `bun.lock` only; `bun-types` pinned to a semver range instead of `latest`.
+- **README**: Build/data hygiene notes (never ship `.git` under `dist/data`).
+
+### Fixed
+
+- **Robust list handling**: Replaced fragile `Array.isArray(...) ? ...join(...)` call sites with `coerceToStringArray` / `parseTags` so malformed `benefits`, `drawbacks`, `tags`, or `when_to_use` payloads cannot crash formatting or keyword scoring paths.
+
 ## [0.4.4] - 2026-02-09
 
 ### Added
